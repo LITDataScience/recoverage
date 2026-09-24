@@ -1,0 +1,37 @@
+# Copy this file to .github/workflows/recoverage.yml after the project
+# installs Recoverage. The job fails when the gate is below the threshold.
+name: recoverage
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  coverage-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the project and Recoverage
+        run: |
+          python -m pip install -U pip
+          # From a checkout of this repo: pip install -e .
+          # Once the package is published: pip install recoverage
+          pip install recoverage
+          # Install the repo under test and its test dependencies, for example:
+          #   pip install -e ".[test]"
+      - name: Recoverage gate
+        run: recoverage run . --output recoverage-out --no-llm --threshold merge-ready
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recoverage-report
+          path: |
+            recoverage-out/report.md
+            recoverage-out/report.pdf
+            recoverage-out/charts
+            recoverage-out/analysis.json

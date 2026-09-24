@@ -1,0 +1,10 @@
+[project]
+name = "shop"
+version = "0.0.1"
+requires-python = ">=3.11"
+description = "Intentionally under-tested shop library used by Recoverage's own tests."
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
