@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
@@ -55,3 +56,6 @@ jobs:
             --title "v$version" \
             --notes-file release-notes.md \
             --verify-tag
+          # A release created with the Actions token does not start another workflow.
+          # workflow_dispatch is the exception, so start the upload explicitly.
+          gh workflow run python-publish.yml --ref main -f tag="v$version"

@@ -6,6 +6,8 @@ All notable changes are documented here. The format is [Keep a Changelog](https:
 
 ## [Unreleased]
 
+- The Release workflow starts the PyPI upload itself. A release created by the Actions token does not trigger a second workflow.
+
 ## [0.1.0] - 2026-09-25
 
 - Default `run` is static. `--dynamic` opts into tests. `--deep` opts into property, mutation, timing, and search probes, all outside this process. Child environments are an allowlist. Timeouts kill the process tree.
