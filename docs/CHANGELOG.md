@@ -6,7 +6,7 @@ All notable changes are documented here. The format is [Keep a Changelog](https:
 
 ## [Unreleased]
 
-- The Release workflow starts the PyPI upload itself. A release created by the Actions token does not trigger a second workflow.
+- The Release workflow starts the PyPI upload on the version tag. The `pypi` environment rejects a run whose ref is `main`.
 
 ## [0.1.0] - 2026-09-25
 

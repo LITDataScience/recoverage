@@ -57,5 +57,5 @@ jobs:
             --notes-file release-notes.md \
             --verify-tag
           # A release created with the Actions token does not start another workflow.
-          # workflow_dispatch is the exception, so start the upload explicitly.
-          gh workflow run python-publish.yml --ref main -f tag="v$version"
+          # Dispatch on the tag, not main: the pypi environment only allows v* tags.
+          gh workflow run python-publish.yml --ref "v$version" -f tag="v$version"
