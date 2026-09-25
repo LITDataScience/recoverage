@@ -300,7 +300,9 @@ def test_scrub_is_memoised_and_leaves_ints_alone():
     assert cleaned["docstring"] == ""
     # POSIX-absolute on POSIX becomes the basename; on Windows Path() does not call it absolute and the regex takes over.
     assert cleaned["root"] in ("project", "<path>")
-    assert cleaned["functions"][0]["file"] == "pay.py"
+    # Basename when Path treats it as absolute (Windows). The regex replaces the whole
+    # string on POSIX, where C:\... is not an absolute path. Either result leaks nothing.
+    assert cleaned["functions"][0]["file"] in {"pay.py", "<path>"}
     assert cleaned["functions"][0]["statement_lines"] == [1, 2, 3]
     assert "[REDACTED]" in cleaned["functions"][2]["note"]
 
