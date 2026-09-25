@@ -6,6 +6,8 @@ All notable changes are documented here. The format is [Keep a Changelog](https:
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-25
+
 - Default `run` is static. `--dynamic` opts into tests. `--deep` opts into property, mutation, timing, and search probes, all outside this process. Child environments are an allowlist. Timeouts kill the process tree.
 - `analysis.json` is scrubbed and written compact. Search arguments are type names. Gap text is escaped in Markdown. A loaded analysis must match this version and stay under 100 MB.
 - Performance pass. Each source file is read once and parsed once per run (`sources.SourceCache`). Coverage pairing, call-edge resolution, graph queries, blast radius, gap lookups, and JS line numbers are indexed instead of scanned: O(S·F), O(E·V), O(V+E) per query, O(F·T), and O(n²) loops are gone. PageRank stops on convergence. A static run over a 2_000-module, 20_000-function tree went from 67s to 24s on the same machine; the file-read count fell from about 6_600 to 2_200. With no diff, `analytics.blast.radius` is `[]` and `radius_size` carries the count.
