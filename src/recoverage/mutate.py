@@ -6,10 +6,10 @@ import ast
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from recoverage.models import MappedFunction, ProjectProfile
+from recoverage.proc import child_env, run_tree, temp_copy
 
 
 def run_mutants(profile: ProjectProfile, functions: list[MappedFunction], *, limit: int = 5) -> dict:
@@ -21,17 +21,11 @@ def run_mutants(profile: ProjectProfile, functions: list[MappedFunction], *, lim
     chosen = (covered + uncovered)[:limit]
     if not chosen:
         return {"ran": False, "killed": 0, "total": 0, "mutants": [], "note": "No functions to mutate."}
-    parent = Path(tempfile.mkdtemp(prefix="recoverage-mutants-"))
-    sandbox = parent / "project"
-    shutil.copytree(
-        root,
-        sandbox,
-        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "recoverage-out", ".coverage", "*.pyc"),
-    )
-    baseline = _pytest(sandbox, profile)
+    parent, sandbox = temp_copy(root, prefix="recoverage-mutants-")
     mutants = []
     unviable = 0
     try:
+        baseline = _pytest(sandbox, profile)
         if baseline != 0:
             return {
                 "ran": True,
@@ -140,12 +134,10 @@ def _pytest(sandbox: Path, profile: ProjectProfile) -> int | str:
         sandbox_import = str(sandbox / relative_import)
     except ValueError:
         sandbox_import = str(import_root)
-    env = dict(**{key: value for key, value in __import__("os").environ.items()})
-    env["PYTHONPATH"] = sandbox_import
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env = child_env({"PYTHONPATH": sandbox_import, "PYTHONDONTWRITEBYTECODE": "1"})
     command = [sys.executable, "-m", "pytest", "-q", "--tb=no", "-p", "no:cacheprovider"]
     try:
-        completed = subprocess.run(command, cwd=sandbox, env=env, capture_output=True, text=True, timeout=120, check=False)
+        completed = run_tree(command, cwd=str(sandbox), env=env, timeout=120)
     except subprocess.TimeoutExpired:
         return "timeout"
     return completed.returncode

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
+try:
+    import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:  # pragma: no cover - optional extra
+    plt = None
 
 from recoverage.models import Analysis
 
@@ -26,6 +29,8 @@ _SEVERITY_COLORS = {
 
 
 def write_charts(analysis: Analysis, output_dir: Path) -> dict[str, Path]:
+    if plt is None:
+        return {}
     chart_dir = output_dir / "charts"
     chart_dir.mkdir(parents=True, exist_ok=True)
     paths = {

@@ -12,6 +12,14 @@ from typing import Protocol
 from recoverage.models import Gap
 
 
+_MAX_BODY = 1_000_000
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("refusing to follow an LLM redirect")
+
+
 class LLMClient(Protocol):
     name: str
 
@@ -46,25 +54,43 @@ class OpenAICompatibleClient:
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        opener = urllib.request.build_opener(_NoRedirect())
+        with opener.open(request, timeout=timeout) as response:
+            raw = response.read(_MAX_BODY + 1)
+        if len(raw) > _MAX_BODY:
+            raise RuntimeError("LLM response exceeded the byte cap")
+        payload = json.loads(raw.decode("utf-8"))
         return str(payload["choices"][0]["message"]["content"])
 
 
 def client_from_env(*, mode: str) -> LLMClient | None:
-    """mode is auto, on, or off. auto uses a client only when the API key is set."""
-    if mode == "off":
+    """mode is auto, on, or off. auto is offline. Only mode "on" builds a client."""
+    if mode in {"off", "auto"}:
         return None
     key = os.environ.get("RECOVERAGE_LLM_API_KEY", "").strip()
     if not key:
         if mode == "on":
             raise RuntimeError("RECOVERAGE_LLM_API_KEY is not set")
         return None
+    base_url = os.environ.get("RECOVERAGE_LLM_BASE_URL", "https://api.openai.com/v1")
+    _require_https(base_url)
     return OpenAICompatibleClient(
         api_key=key,
-        base_url=os.environ.get("RECOVERAGE_LLM_BASE_URL", "https://api.openai.com/v1"),
+        base_url=base_url,
         model=os.environ.get("RECOVERAGE_LLM_MODEL", "gpt-4o-mini"),
     )
+
+
+def _require_https(base_url: str) -> None:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(base_url)
+    if parsed.scheme == "https":
+        return
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "http" and host in {"localhost", "127.0.0.1", "::1"}:
+        return
+    raise RuntimeError("RECOVERAGE_LLM_BASE_URL must be https, or http on localhost")
 
 
 def enrich_gaps(gaps: list[Gap], client: LLMClient | None) -> tuple[list[Gap], str]:

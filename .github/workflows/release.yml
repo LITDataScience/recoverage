@@ -1,0 +1,57 @@
+name: Release
+
+# Cuts the tag from src/recoverage/version.py and publishes a GitHub Release.
+# python-publish.yml then tests that commit and uploads it to PyPI.
+# Run this from the Actions tab on main, after ci.yml is green and the PyPI
+# trusted publisher plus the pypi environment exist. Do not tag by hand.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Promote the changelog and refuse an existing tag
+        run: |
+          set -eu
+          version=$(python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('src/recoverage/version.py', encoding='utf-8').read()).group(1))")
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version already exists" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "v$version" >/dev/null 2>&1; then
+            echo "v$version already exists on origin" >&2
+            exit 1
+          fi
+          python scripts/promote_changelog.py > release-notes.md
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$version"
+        id: cut
+      - name: Commit, tag, and publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version="${{ steps.cut.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/CHANGELOG.md
+          git commit -m "Release v$version"
+          git tag -a "v$version" -m "recoverage $version"
+          git push origin HEAD:main
+          git push origin "v$version"
+          gh release create "v$version" \
+            --title "v$version" \
+            --notes-file release-notes.md \
+            --verify-tag

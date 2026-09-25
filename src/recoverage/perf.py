@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import importlib
 import math
-import sys
-import time
 from pathlib import Path
 
 from recoverage.models import MappedFunction, ProjectProfile
+from recoverage.probe import ProbeSession
 
 
 def mann_whitney(sample_a: list[float], sample_b: list[float]) -> tuple[float, float]:
@@ -72,25 +70,15 @@ def time_functions(profile: ProjectProfile, functions: list[MappedFunction], rep
         return {"ran": False, "regression": False, "p_value": None, "note": "No parameterized public functions to time."}
     regressions = []
     worst_p = 1.0
-    inserted = profile.import_root not in sys.path
-    if inserted:
-        sys.path.insert(0, profile.import_root)
-    previous = sys.dont_write_bytecode
-    sys.dont_write_bytecode = True
+    measured = 0
+    session = ProbeSession(profile, call_timeout=30.0)
     try:
-        loaded = []
         for function in usable:
-            module = _module(function.spec.file, profile.src_layout)
-            try:
-                target = getattr(_load_module(profile, function.spec.file, module), function.spec.name)
-            except Exception:
-                continue
-            loaded.append((function, target))
-        for function, target in loaded:
-            baseline = _times(target, function, "baseline", repeats)
-            heavy = _times(target, function, "heavy", repeats)
+            baseline = _times(session, profile, function, "baseline", repeats)
+            heavy = _times(session, profile, function, "heavy", repeats)
             if baseline is None or heavy is None:
                 continue
+            measured += 1
             _u, p_value = mann_whitney(baseline, heavy)
             worst_p = min(worst_p, p_value)
             base_med = sorted(baseline)[len(baseline) // 2]
@@ -104,9 +92,15 @@ def time_functions(profile: ProjectProfile, functions: list[MappedFunction], rep
                     }
                 )
     finally:
-        sys.dont_write_bytecode = previous
-        if inserted and profile.import_root in sys.path:
-            sys.path.remove(profile.import_root)
+        session.close()
+    if measured == 0:
+        return {
+            "ran": False,
+            "regression": False,
+            "p_value": None,
+            "regressions": [],
+            "note": "No function was successfully timed.",
+        }
     note = (
         "Mann-Whitney U compared baseline inputs with heavier inputs on this same revision. "
         "A regression is recorded only when p < 0.05 and the median is more than 8x slower. "
@@ -124,17 +118,21 @@ def time_functions(profile: ProjectProfile, functions: list[MappedFunction], rep
     }
 
 
-def _times(target, function: MappedFunction, mode: str, repeats: int) -> list[float] | None:
-    samples: list[float] = []
-    for _ in range(repeats):
-        args = _args(function, mode)
-        start = time.perf_counter()
-        try:
-            target(*args)
-        except Exception:
-            return None
-        samples.append(time.perf_counter() - start)
-    return samples
+def _times(session: ProbeSession, profile: ProjectProfile, function: MappedFunction, mode: str, repeats: int) -> list[float] | None:
+    payload = session.request(
+        {
+            "op": "time",
+            "module": _module(function.spec.file, profile.src_layout),
+            "qualname": function.spec.qualname,
+            "args": list(_args(function, mode)),
+            "repeats": repeats,
+        },
+        timeout=30.0,
+    )
+    samples = payload.get("samples")
+    if not payload.get("ok") or not isinstance(samples, list) or len(samples) != repeats:
+        return None
+    return [float(item) for item in samples]
 
 
 def _args(function: MappedFunction, mode: str) -> tuple:
@@ -158,17 +156,6 @@ def _args(function: MappedFunction, mode: str) -> tuple:
         else:
             values.append("x" if heavy else "a")
     return tuple(values)
-
-
-def _load_module(profile: ProjectProfile, relative: str, module: str):
-    imported = importlib.import_module(module)
-    expected = (Path(profile.root) / relative).resolve()
-    actual_file = getattr(imported, "__file__", None)
-    actual = Path(actual_file).resolve() if actual_file else None
-    if actual != expected:
-        sys.modules.pop(module, None)
-        imported = importlib.import_module(module)
-    return imported
 
 
 def _module(relative: str, src_layout: bool) -> str:

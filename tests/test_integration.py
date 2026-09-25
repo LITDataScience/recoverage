@@ -32,7 +32,7 @@ def test_run_fixture_writes_real_report(tmp_path: Path):
     project = _copy(tmp_path)
     original = (project / "tests" / "test_cart.py").read_text(encoding="utf-8")
     output = tmp_path / "out"
-    analysis, code = execute_run(project, output, llm_mode="off")
+    analysis, code = execute_run(project, output, llm_mode="off", dynamic=True, deep=True)
     assert code == 0
     assert analysis.coverage.measured is True
     assert analysis.coverage.tool == "coverage.py"
@@ -85,7 +85,7 @@ def test_generate_drafts_are_real_and_safe(tmp_path: Path):
     assert list(project.glob("tests/*recoverage*")) == []
     assert (output / "generation-preview.md").is_file()
 
-    first, code = execute_run(project, output, llm_mode="off")
+    first, code = execute_run(project, output, llm_mode="off", dynamic=True, deep=True)
     _, planned = execute_generate(project, output, llm_mode="off", dry_run=False)
     assert len(planned) > 0
     for item in planned:
@@ -111,7 +111,7 @@ def test_generate_drafts_are_real_and_safe(tmp_path: Path):
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    second, _ = execute_run(project, tmp_path / "out2", llm_mode="off")
+    second, _ = execute_run(project, tmp_path / "out2", llm_mode="off", dynamic=True, deep=True)
     assert second.score.score > first.score.score
     charge = next(item for item in second.functions if item.spec.name == "charge")
     assert charge.coverage_ratio is not None and charge.coverage_ratio > 0

@@ -48,24 +48,33 @@ class CodeGraph:
     pagerank: dict[str, float]
     communities: dict[str, int]
     tree_sitter: bool
+    _by_qualname: dict[str, "Entity"] = field(default_factory=dict, repr=False, compare=False)
+    _by_symbol: dict[str, list["Entity"]] = field(default_factory=dict, repr=False, compare=False)
+    _adjacent: dict[str, list[tuple[str, str]]] = field(default_factory=dict, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # O(V + E) indexes so query_context is O(deg) instead of O(V + E) per call.
+        self._by_qualname = {entity.qualname: entity for entity in self.entities}
+        self._by_symbol = {}
+        for entity in self.entities:
+            self._by_symbol.setdefault(entity.symbol, []).append(entity)
+        self._adjacent = {}
+        for src, dst, kind in self.edges:
+            self._adjacent.setdefault(src, []).append((dst, kind))
+            self._adjacent.setdefault(dst, []).append((src, kind))
 
     def query_context(self, symbol: str, limit: int = 8) -> dict:
         """Dependency scope for one focal symbol. Not a raw file dump."""
         needle = symbol.split(".")[-1]
-        matches = [
-            entity
-            for entity in self.entities
-            if entity.qualname == symbol or entity.symbol == needle or entity.qualname.endswith("." + needle)
-        ]
-        if not matches:
+        focal = self._by_qualname.get(symbol)
+        if focal is None:
+            candidates = self._by_symbol.get(needle) or []
+            focal = candidates[0] if candidates else None
+        if focal is None:
             return {"symbol": symbol, "found": False, "dependencies": [], "community": None, "pagerank": 0.0}
-        focal = matches[0]
         community = self.communities.get(focal.qualname, -1)
         neighbors = []
-        for src, dst, kind in self.edges:
-            other = dst if src == focal.qualname else src if dst == focal.qualname else None
-            if other is None:
-                continue
+        for other, kind in self._adjacent.get(focal.qualname, ()):
             neighbors.append(
                 {
                     "symbol": other,
@@ -105,9 +114,10 @@ def index_project(profile: ProjectProfile) -> CodeGraph:
         edges.extend(found_edges)
     symbols = [entity.qualname for entity in entities]
     known = set(symbols)
+    by_suffix = _suffix_index(known)
     resolved = []
     for src, dst, kind in edges:
-        target = _resolve(dst, known)
+        target = _resolve(dst, known, by_suffix)
         if target is not None:
             resolved.append((src, target, kind))
     ranks = pagerank(symbols, [(src, dst) for src, dst, _kind in resolved])
@@ -133,19 +143,26 @@ def pagerank(nodes: list[str], edges: list[tuple[str, str]], *, damping: float =
         if src in present and dst in present and src != dst:
             outgoing[src].append(dst)
     rank = {node: 1.0 / count for node in unique}
+    base = (1.0 - damping) / count
     for _ in range(steps):
-        nxt = {node: (1.0 - damping) / count for node in unique}
+        nxt = dict.fromkeys(unique, 0.0)
+        dangling = 0.0
         for node in unique:
             targets = outgoing[node]
             if not targets:
-                share = damping * rank[node] / count
-                for other in unique:
-                    nxt[other] += share
-            else:
-                share = damping * rank[node] / len(targets)
-                for dst in targets:
-                    nxt[dst] += share
+                dangling += rank[node]
+                continue
+            share = damping * rank[node] / len(targets)
+            for dst in targets:
+                nxt[dst] += share
+        # Teleport and dangling mass are one constant per node: O(V), no second pass.
+        constant = base + damping * dangling / count
+        for node in unique:
+            nxt[node] += constant
+        delta = sum(abs(nxt[node] - rank[node]) for node in unique)
         rank = nxt
+        if delta < 1e-9:
+            break
     return {node: round(value, 6) for node, value in rank.items()}
 
 
@@ -245,8 +262,8 @@ def _walk_file(relative: str, source: bytes, root, language: str) -> tuple[list[
                 entity = _entity_from(node, relative, source, class_name, language)
                 if entity is not None:
                     entities.append(entity)
-                    for callee in _calls(node):
-                        edges.append((entity.qualname, callee, "call"))
+                    # entity.calls already walked this body once; do not walk it again.
+                    edges.extend((entity.qualname, callee, "call") for callee in entity.calls)
         for child in reversed(list(node.children)):
             stack.append((child, next_class))
     return entities, edges
@@ -308,24 +325,29 @@ def _docstring(node, source: bytes, language: str) -> str:
     return ""
 
 
-def _calls(node) -> list[str]:
-    found: list[str] = []
+_BUILTIN_CALLS = frozenset({"print", "range", "len", "round", "str", "int", "float"})
+_FUNCTION_NODES = frozenset({"function_definition", "function_declaration"})
+_CALL_NODES = frozenset({"call", "call_expression"})
 
-    def walk(current) -> None:
-        if current.type in {"call", "call_expression"}:
+
+def _calls(node) -> list[str]:
+    """Distinct callee names in source order. Iterative, O(nodes), set-backed dedupe."""
+    found: list[str] = []
+    seen: set[str] = set()
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type in _CALL_NODES:
             fn = current.child_by_field_name("function") if hasattr(current, "child_by_field_name") else None
             name = _callee(fn) if fn is not None else None
-            if name and name not in found and name not in {"print", "range", "len", "round", "str", "int", "float"}:
+            if name and name not in seen and name not in _BUILTIN_CALLS:
+                seen.add(name)
                 found.append(name)
-        for child in current.children:
-            if current.type in {"function_definition", "function_declaration"} and child.type in {
-                "function_definition",
-                "function_declaration",
-            }:
+        nested = current.type in _FUNCTION_NODES
+        for child in reversed(current.children):
+            if nested and child.type in _FUNCTION_NODES:
                 continue
-            walk(child)
-
-    walk(node)
+            stack.append(child)
     return found
 
 
@@ -344,11 +366,21 @@ def _callee(node) -> str | None:
     return None
 
 
-def _resolve(name: str, known: set[str]) -> str | None:
+def _suffix_index(known: set[str]) -> dict[str, list[str]]:
+    """Last dotted segment to qualnames. Built once, O(V)."""
+    index: dict[str, list[str]] = {}
+    for item in known:
+        if "." in item:
+            index.setdefault(item.rsplit(".", 1)[1], []).append(item)
+    return index
+
+
+def _resolve(name: str, known: set[str], by_suffix: dict[str, list[str]] | None = None) -> str | None:
     if name in known:
         return name
-    suffix = "." + name
-    hits = [item for item in known if item.endswith(suffix)]
+    if by_suffix is None:
+        by_suffix = _suffix_index(known)
+    hits = by_suffix.get(name) or []
     if len(hits) == 1:
         return hits[0]
     return None

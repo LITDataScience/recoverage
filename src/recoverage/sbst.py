@@ -10,6 +10,8 @@ from pathlib import Path
 
 from recoverage.llm import LLMClient
 from recoverage.models import MappedFunction, ProjectProfile
+from recoverage.privacy import public_args
+from recoverage.probe import ProbeSession
 
 _BANNED = (
     "subprocess",
@@ -29,6 +31,20 @@ _BANNED = (
 )
 
 
+def _load_clean(path: Path) -> tuple[str, ast.AST] | None:
+    """Read and parse once per file. None when missing, banned, or unparsable."""
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    if any(token in source for token in _BANNED):
+        return None
+    try:
+        return source, ast.parse(source)
+    except SyntaxError:
+        return None
+
+
 def search(
     profile: ProjectProfile,
     functions: list[MappedFunction],
@@ -41,6 +57,7 @@ def search(
     """Evolve primitive arguments. Fitness is the count of distinct lines executed inside the function."""
     root = Path(profile.root)
     cases: list[dict] = []
+    session = ProbeSession(profile)
     stalls = 0
     agents: list[dict] = []
     targets = [
@@ -48,17 +65,15 @@ def search(
         for function in functions
         if function.spec.is_public and not function.spec.is_method and function.spec.file.endswith(".py")
     ]
+    parsed: dict[str, tuple[str, ast.AST] | None] = {}
     for function in targets:
-        source_path = root / function.spec.file
-        if not source_path.is_file():
+        relative = function.spec.file
+        if relative not in parsed:
+            parsed[relative] = _load_clean(root / relative)
+        loaded = parsed[relative]
+        if loaded is None:
             continue
-        source = source_path.read_text(encoding="utf-8")
-        if any(token in source for token in _BANNED):
-            continue
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            continue
+        source, tree = loaded
         node = _find(tree, function.spec.qualname)
         if not isinstance(node, ast.FunctionDef):
             continue
@@ -78,7 +93,7 @@ def search(
 
         def consider(args: tuple, *, source: str | None = None) -> None:
             nonlocal best_lines, best_args, best_raised, seed_source, covered
-            _value, error, lines = _trace(profile, function.spec.file, function.spec.qualname, args)
+            _value, error, lines = _trace(session, function.spec.file, function.spec.qualname, args)
             if error is not None and not isinstance(error, (ValueError, TypeError, KeyError)):
                 return
             raised = error is not None
@@ -136,7 +151,7 @@ def search(
                     "qualname": function.spec.qualname,
                     "name": function.spec.name,
                     "file": function.spec.file,
-                    "args": list(best_args),
+                    "args": public_args(list(best_args)),
                     "lines": sorted(best_lines),
                     "seed_source": seed_source,
                     "spec": _spec(function),
@@ -144,15 +159,19 @@ def search(
                     "raised": best_raised,
                 }
             )
+    session.close()
     return {"cases": cases, "stalls": stalls, "agents": agents, "llm": client is not None}
 
 
 def _seed(function: MappedFunction, node: ast.FunctionDef, held: dict[str, list], client: LLMClient | None):
     if client is not None:
-        raw = client.complete(
-            system="Return a JSON array of positional arguments that reach the unexecuted branch. JSON only.",
-            user=f"function {function.spec.qualname} parameters {function.spec.parameters}",
-        )
+        try:
+            raw = client.complete(
+                system="Return a JSON array of positional arguments that reach the unexecuted branch. JSON only.",
+                user=f"function {function.spec.qualname} parameters {function.spec.parameters}",
+            )
+        except Exception:
+            raw = ""
         parsed = _parse_args(raw)
         if parsed is not None:
             return tuple(parsed), "llm"
@@ -202,42 +221,13 @@ def _parse_args(raw: str) -> list | None:
     return None
 
 
-def _trace(profile: ProjectProfile, file: str, qualname: str, args: tuple):
-    module = _module(file, profile.src_layout)
-    name = qualname.split(".")[-1]
-    inserted = profile.import_root not in sys.path
-    if inserted:
-        sys.path.insert(0, profile.import_root)
-    previous = sys.dont_write_bytecode
-    sys.dont_write_bytecode = True
-    lines: set[int] = set()
-
-    try:
-        imported = _load_module(profile, file, module)
-        target = getattr(imported, name)
-        # Coverage and other tools install a tracer on this thread. Replacing it
-        # and then clearing it makes every later line in the process look uncovered.
-        previous_trace = sys.gettrace()
-
-        def tracer(frame, event, arg):
-            if event == "line" and frame.f_code.co_name == name:
-                lines.add(frame.f_lineno)
-            return tracer
-
-        sys.settrace(tracer)
-        try:
-            value = target(*args)
-            return value, None, lines
-        except Exception as exc:
-            return None, exc, lines
-        finally:
-            sys.settrace(previous_trace)
-    except Exception as exc:
-        return None, exc, lines
-    finally:
-        sys.dont_write_bytecode = previous
-        if inserted and profile.import_root in sys.path:
-            sys.path.remove(profile.import_root)
+def _trace(session: ProbeSession, file: str, qualname: str, args: tuple):
+    payload = session.call(file, qualname, args, trace=True)
+    kind = payload.get("error")
+    if not kind:
+        return payload.get("value"), None, set(payload.get("lines") or [])
+    mapped = {"ValueError": ValueError, "TypeError": TypeError, "KeyError": KeyError}.get(kind, RuntimeError)
+    return None, mapped(kind), set(payload.get("lines") or [])
 
 
 def _load_module(profile: ProjectProfile, relative: str, module: str):

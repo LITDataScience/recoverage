@@ -82,9 +82,64 @@ def test_sbst_stall_injects_held_constant(tmp_path: Path):
     result = search(profile, [function], client=None, generations=6, population=8, stall_generations=2)
     assert result["stalls"] >= 1
     assert result["cases"]
-    assert any(case["args"] == ["BEARER_ADMIN_TOKEN"] or "BEARER_ADMIN_TOKEN" in case["args"] for case in result["cases"])
+    blob = str(result)
+    assert "BEARER_ADMIN_TOKEN" not in blob
+    assert any("<redacted>" in case["args"] or "str" in case["args"] for case in result["cases"])
     assert result["cases"][0]["seed_source"] == "ast-constants"
     ast.parse("pass")
+
+
+def test_sbst_llm_failure_falls_back_to_ast_constants(tmp_path: Path):
+    class Boom:
+        name = "boom"
+
+        def complete(self, *, system: str, user: str, timeout: float = 30) -> str:
+            raise RuntimeError("down")
+
+    (tmp_path / "gate.py").write_text(
+        "def allow(token: str) -> str:\n"
+        "    if token == 'BEARER_ADMIN_TOKEN':\n"
+        "        return 'ok'\n"
+        "    return 'no'\n",
+        encoding="utf-8",
+    )
+    profile = ProjectProfile(
+        root=str(tmp_path),
+        primary_language="python",
+        languages=["python"],
+        test_runner=None,
+        coverage_tool=None,
+        test_files=[],
+        source_files=["gate.py"],
+        entry_points=[],
+        packages=[],
+        import_root=str(tmp_path),
+        src_layout=False,
+        flake_markers=[],
+    )
+    function = MappedFunction(
+        spec=FunctionSpec(
+            name="allow",
+            qualname="allow",
+            file="gate.py",
+            lineno=1,
+            end_lineno=4,
+            branch_count=1,
+            complexity=2,
+            is_public=True,
+            risk_score=0.2,
+            risk_tags=[],
+            parameters=["token"],
+        ),
+        coverage_ratio=None,
+        covered_lines=0,
+        executable_lines=3,
+        missing_lines=[],
+        file_measured=False,
+    )
+    result = search(profile, [function], client=Boom(), generations=6, population=8, stall_generations=2)
+    assert result["cases"]
+    assert result["cases"][0]["seed_source"] == "ast-constants"
 
 
 def test_search_skips_functions_that_reenter_the_runner(tmp_path: Path):
@@ -191,7 +246,7 @@ def test_search_restores_the_previous_tracer(tmp_path: Path):
 def test_nested_execute_run_is_refused(tmp_path: Path):
     from recoverage import pipeline
 
-    pipeline._DEPTH = 1
+    assert pipeline._LOCK.acquire(blocking=False)
     try:
         try:
             pipeline.execute_run(tmp_path, tmp_path / "out", llm_mode="off")
@@ -200,7 +255,7 @@ def test_nested_execute_run_is_refused(tmp_path: Path):
             raised = "already running" in str(exc)
         assert raised is True
     finally:
-        pipeline._DEPTH = 0
+        pipeline._LOCK.release()
 
 
 def test_mann_whitney_separates_samples():

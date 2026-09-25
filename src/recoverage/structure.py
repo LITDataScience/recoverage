@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ast
+import bisect
 import re
 from pathlib import Path
 
 from recoverage.models import RISK_THRESHOLD, FileStructure, FunctionSpec, ProjectProfile
+from recoverage.sources import SourceCache
 
 _NAME_RISK: tuple[tuple[str, float, str], ...] = (
     ("password", 0.95, "auth"),
@@ -67,14 +69,16 @@ _GENERIC_FUNC = re.compile(
 )
 
 
-def analyze_project(profile: ProjectProfile) -> list[FileStructure]:
+def analyze_project(profile: ProjectProfile, cache: SourceCache | None = None) -> list[FileStructure]:
     root = Path(profile.root)
+    cache = cache or SourceCache(root)
     structures: list[FileStructure] = []
     for relative in profile.source_files:
-        path = root / relative
-        language = _language_for(path)
-        text = path.read_text(encoding="utf-8", errors="replace")
-        structures.append(_analyze_file(relative, language, text, profile.src_layout))
+        language = _language_for(root / relative)
+        text = cache.text(relative)
+        if text is None:
+            continue
+        structures.append(_analyze_file(relative, language, text, profile.src_layout, cache))
     return structures
 
 
@@ -90,11 +94,11 @@ def _language_for(path: Path) -> str:
     }.get(path.suffix.lower(), path.suffix.lower().lstrip(".") or "generic")
 
 
-def _analyze_file(relative: str, language: str, text: str, src_layout: bool) -> FileStructure:
+def _analyze_file(relative: str, language: str, text: str, src_layout: bool, cache: SourceCache | None = None) -> FileStructure:
     module = _module_name(relative, src_layout)
     package = module.split(".")[0] if "." in module else module
     if language == "python":
-        return _analyze_python(relative, text, module, package)
+        return _analyze_python(relative, text, module, package, cache)
     if language in {"javascript", "typescript"}:
         return _analyze_js(relative, language, text, module, package)
     return _analyze_generic(relative, language, text, module, package)
@@ -111,9 +115,13 @@ def _module_name(relative: str, src_layout: bool) -> str:
     return ".".join(parts) if parts else path.stem
 
 
-def _analyze_python(relative: str, text: str, module: str, package: str) -> FileStructure:
+def _analyze_python(relative: str, text: str, module: str, package: str, cache: SourceCache | None = None) -> FileStructure:
     try:
-        tree = ast.parse(text)
+        tree = cache.tree(relative) if cache is not None else ast.parse(text)
+        if tree is None:
+            # The cache swallows the SyntaxError; re-parse here only to get the message.
+            ast.parse(text)
+            raise SyntaxError("unparsable")
     except SyntaxError as exc:
         return FileStructure(
             path=relative,
@@ -140,9 +148,10 @@ def _analyze_python(relative: str, text: str, module: str, package: str) -> File
 
 def _statement_lines(tree: ast.AST) -> set[int]:
     lines: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.stmt) and getattr(node, "lineno", None):
-            lines.add(node.lineno)
+    for node in iter_statements(tree):
+        lineno = getattr(node, "lineno", None)
+        if lineno:
+            lines.add(lineno)
     if isinstance(tree, ast.Module) and tree.body and isinstance(tree.body[0], ast.Expr):
         value = tree.body[0].value
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
@@ -150,21 +159,37 @@ def _statement_lines(tree: ast.AST) -> set[int]:
     return lines
 
 
-def _python_functions(tree: ast.AST, relative: str, module: str) -> list[FunctionSpec]:
-    found: list[FunctionSpec] = []
+# Nodes whose children can contain statements. Expressions never do (a lambda is not a
+# FunctionDef), so skipping them cuts the statement walk to the statement skeleton.
+_BLOCK_NODES = (ast.stmt, ast.ExceptHandler, ast.match_case, ast.Module, ast.Interactive)
 
-    def visit(node: ast.AST, class_name: str | None) -> None:
+
+def iter_statements(tree: ast.AST):
+    """Every ast.stmt in the tree, visiting only statement-bearing nodes: O(statements)."""
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.stmt):
+            yield node
         for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.ClassDef):
-                visit(child, child.name)
-                continue
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                found.append(_function_spec(child, relative, module, class_name))
-                visit(child, class_name)
-                continue
-            visit(child, class_name)
+            if isinstance(child, _BLOCK_NODES):
+                stack.append(child)
 
-    visit(tree, None)
+
+def _python_functions(tree: ast.AST, relative: str, module: str) -> list[FunctionSpec]:
+    """Iterative statement-skeleton walk. Nested defs are found; expressions are never entered."""
+    found: list[FunctionSpec] = []
+    stack: list[tuple[ast.AST, str | None]] = [(tree, None)]
+    while stack:
+        node, class_name = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not tree:
+            found.append(_function_spec(node, relative, module, class_name))
+        for child in ast.iter_child_nodes(node):
+            if not isinstance(child, _BLOCK_NODES):
+                continue
+            # A class sets the name its methods inherit. Functions pass their enclosing class down unchanged.
+            stack.append((child, child.name if isinstance(child, ast.ClassDef) else class_name))
+    found.sort(key=lambda item: (item.lineno, item.qualname))
     return found
 
 
@@ -178,7 +203,8 @@ def _function_spec(
     qualname = f"{class_name}.{name}" if class_name else name
     params = [arg.arg for arg in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]]
     params = [param for param in params if param not in {"self", "cls"}]
-    branches, complexity = _complexity(node)
+    branches, statement_lines = _body_metrics(node)
+    complexity = 1 + branches
     risk_score, tags = _risk(name, "", complexity)
     return FunctionSpec(
         name=name,
@@ -193,44 +219,48 @@ def _function_spec(
         risk_tags=tags,
         parameters=params,
         is_method=class_name is not None,
-        statement_lines=sorted(_function_statement_lines(node)),
+        statement_lines=statement_lines,
     )
 
 
-def _function_statement_lines(node: ast.AST) -> set[int]:
+_SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_DECISION_NODES = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp, ast.ExceptHandler, ast.Match, ast.Assert)
+
+
+def _body_metrics(node: ast.AST) -> tuple[int, list[int]]:
+    """Decision points and statement lines of one function body in a single iterative pass.
+
+    Nested defs and classes are their own scope and are not descended. This used to be
+    two recursive walks per function; on a 20_000-function tree that was 2M extra visits.
+    """
+    decisions = 0
     lines: set[int] = set()
-
-    def walk(current: ast.AST) -> None:
-        for child in ast.iter_child_nodes(current):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                continue
-            if isinstance(child, ast.stmt) and getattr(child, "lineno", None):
-                lines.add(child.lineno)
-            walk(child)
-
-    walk(node)
     if getattr(node, "lineno", None):
         lines.add(node.lineno)
-    return lines
-
-
-def _complexity(node: ast.AST) -> tuple[int, int]:
-    decisions = 0
-
-    def walk(current: ast.AST) -> None:
-        nonlocal decisions
+    stack = [node]
+    while stack:
+        current = stack.pop()
         for child in ast.iter_child_nodes(current):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and child is not node:
+            if isinstance(child, _SCOPE_NODES):
                 continue
-            if isinstance(child, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp, ast.ExceptHandler, ast.Match, ast.Assert)):
+            if isinstance(child, ast.stmt):
+                lineno = getattr(child, "lineno", None)
+                if lineno:
+                    lines.add(lineno)
+                if isinstance(child, _DECISION_NODES):
+                    decisions += 1
+            elif isinstance(child, _DECISION_NODES):
                 decisions += 1
             elif isinstance(child, ast.BoolOp):
                 decisions += max(0, len(child.values) - 1)
             elif isinstance(child, ast.comprehension):
                 decisions += len(child.ifs)
-            walk(child)
+            stack.append(child)
+    return decisions, sorted(lines)
 
-    walk(node)
+
+def _complexity(node: ast.AST) -> tuple[int, int]:
+    decisions, _lines = _body_metrics(node)
     return decisions, 1 + decisions
 
 
@@ -255,12 +285,15 @@ def _risk(name: str, source: str, complexity: int) -> tuple[float, list[str]]:
     return round(score, 3), tags
 
 
-def attach_sources(structures: list[FileStructure], root: Path) -> None:
+def attach_sources(structures: list[FileStructure], root: Path, cache: SourceCache | None = None) -> None:
     """Recompute risk using real function source. The first pass has empty bodies."""
+    cache = cache or SourceCache(root)
     for structure in structures:
         if structure.language != "python" or structure.parse_error:
             continue
-        text = (root / structure.path).read_text(encoding="utf-8", errors="replace")
+        text = cache.text(structure.path)
+        if text is None:
+            continue
         lines = text.splitlines()
         for function in structure.functions:
             body = "\n".join(lines[function.lineno - 1 : function.end_lineno])
@@ -269,14 +302,25 @@ def attach_sources(structures: list[FileStructure], root: Path) -> None:
             function.risk_tags = tags
 
 
+def _line_locator(text: str):
+    """O(1) amortised offset→line. Newline offsets are collected once; lookups bisect."""
+    starts = [index + 1 for index, char in enumerate(text) if char == "\n"]
+
+    def line_of(offset: int) -> int:
+        return bisect.bisect_right(starts, offset) + 1
+
+    return line_of
+
+
 def _analyze_js(relative: str, language: str, text: str, module: str, package: str) -> FileStructure:
     functions: list[FunctionSpec] = []
     lines = text.splitlines()
+    line_of = _line_locator(text)
     for match in _JS_FUNC.finditer(text):
         name = next(group for group in match.groups() if group)
         if name in _JS_KEYWORDS:
             continue
-        start = text[: match.start()].count("\n") + 1
+        start = line_of(match.start())
         end = _brace_end(lines, start - 1)
         body = "\n".join(lines[start - 1 : end])
         branches = len(re.findall(r"\b(if|else if|for|while|case|catch)\b|\?(?!=)", body))
@@ -338,11 +382,12 @@ def _js_params(signature: str) -> list[str]:
 
 def _analyze_generic(relative: str, language: str, text: str, module: str, package: str) -> FileStructure:
     functions: list[FunctionSpec] = []
+    line_of = _line_locator(text)
     for match in _GENERIC_FUNC.finditer(text):
         name = next(group for group in match.groups() if group)
         if name in _JS_KEYWORDS:
             continue
-        lineno = text[: match.start()].count("\n") + 1
+        lineno = line_of(match.start())
         score, tags = _risk(name, "", 1)
         functions.append(
             FunctionSpec(

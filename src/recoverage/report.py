@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from recoverage.models import Analysis
 from recoverage.score import RUBRIC_MD, explain_gate
-from recoverage.typst_render import write_typst_pdf
+from recoverage.typst_render import TypstMissing, write_typst_pdf
 
 _GATE_HEX = {
     "blocked": "#9B2335",
@@ -29,13 +30,14 @@ def build_markdown(analysis: Analysis) -> str:
         "",
         _gate_sentence(analysis),
         "",
-        f"Project: `{analysis.project.root}`  ",
+        f"Project: `{_display_root(analysis.project.root)}`  ",
         f"Language: {analysis.project.primary_language}  ",
         f"Test runner: {analysis.project.test_runner or 'none'}  ",
         f"Coverage tool: {coverage.tool}  ",
         f"LLM: {analysis.llm}  ",
         f"Generated: {analysis.generated_at}",
         "",
+        *_project_notes(analysis),
         f"<!-- recoverage:score={score.score:.1f};gate={score.gate};mutation={'true' if score.mutation_testing_ran else 'false'} -->",
         "",
         "## Coverage stats",
@@ -86,8 +88,28 @@ def write_reports(analysis: Analysis, output_dir: Path, charts: dict[str, Path])
     from recoverage.html_report import write_html
 
     write_html(analysis, html_path, charts)
-    write_typst_pdf(analysis, output_dir)
+    try:
+        write_typst_pdf(analysis, output_dir)
+    except TypstMissing as exc:
+        if pdf_path.is_file():
+            pdf_path.unlink()
+        print(f"recoverage: {exc} Markdown and HTML were written.", file=sys.stderr)
     return md_path, pdf_path, html_path
+
+
+def _project_notes(analysis: Analysis) -> list[str]:
+    notes = list(analysis.project.notes)
+    if not notes:
+        return []
+    return ["", *[f"- {note}" for note in notes], ""]
+
+
+def _md(value: str) -> str:
+    """Keep gap text from becoming a Markdown link or image."""
+    escaped = value.replace("\\", "\\\\")
+    for char in ("`", "*", "_", "[", "]", "(", ")", "<", ">", "!", "#"):
+        escaped = escaped.replace(char, "\\" + char)
+    return escaped.replace("\n", " ")
 
 
 def _gate_sentence(analysis: Analysis) -> str:
@@ -99,13 +121,16 @@ def _gate_sentence(analysis: Analysis) -> str:
         measured=coverage.measured,
         line=coverage.line_percent,
         critical=sum(1 for gap in analysis.gaps if gap.severity == "critical"),
+        tests_exit_code=coverage.tests_exit_code,
     )
 
 
 def _markdown_with_images(markdown: str, charts: dict[str, Path], md_path: Path) -> str:
     def replace(match: re.Match[str]) -> str:
         key = match.group(1)
-        chart = charts[key]
+        chart = charts.get(key)
+        if chart is None:
+            return ""
         relative = chart.relative_to(md_path.parent).as_posix()
         return f"![{key.replace('_', ' ')}]({relative})"
 
@@ -162,10 +187,10 @@ def _findings(analysis: Analysis) -> str:
         heuristic = " Heuristic." if gap.heuristic else ""
         llm = " LLM-enriched." if gap.llm_enriched else ""
         blocks.append(
-            f"### {gap.id} · {gap.severity} · {gap.title}\n\n"
+            f"### {gap.id} · {gap.severity} · {_md(gap.title)}\n\n"
             f"{where}{symbol}. Kind: `{gap.kind}`.{heuristic}{llm}\n\n"
-            f"{gap.why}\n\n"
-            f"Suggestion: {gap.suggestion}"
+            f"{_md(gap.why)}\n\n"
+            f"Suggestion: {_md(gap.suggestion)}"
         )
     return "\n\n".join(blocks)
 
@@ -175,7 +200,7 @@ def _suggestions(analysis: Analysis) -> str:
     lines = [
         "Read the findings from the top. Critical and high items are the ones that move the gate.",
         "",
-        "- `recoverage generate` keeps a draft only after a sandbox compile and 5 passing runs, and only if it adds covered lines or kills a mutant the current suite left alive. It does not lock in observed return values.",
+        "- `recoverage generate` keeps a draft only after a temp-copy compile and 5 passing runs, and only if it adds covered lines or kills a mutant the current suite left alive. It does not lock in observed return values.",
         "- Recoverage will not delete or overwrite an existing test file.",
         "- Prompt coverage ΔH is a lexical entropy proxy unless an attention model is actually queried. The report names which one ran.",
         "- Mutation counts come from temp-copy mutants. If that section says mutation did not run, it did not.",
@@ -257,6 +282,11 @@ def _assertion_note(audit: dict) -> str:
             flakiness.get("note") or "Flakiness risk was not computed.",
         ]
     )
+
+
+def _display_root(root: str) -> str:
+    path = Path(root)
+    return path.name if path.is_absolute() else root
 
 
 def _pct(value: float | None) -> str:

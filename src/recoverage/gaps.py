@@ -6,15 +6,18 @@ import re
 from pathlib import Path
 
 from recoverage.models import SEVERITY_ORDER, Gap, MappedFunction, ProjectProfile
+from recoverage.sources import SourceCache
 
 
 def find_gaps(
     profile: ProjectProfile,
     functions: list[MappedFunction],
     extra: list[Gap] | None = None,
+    *,
+    cache: SourceCache | None = None,
 ) -> list[Gap]:
     gaps: list[Gap] = []
-    runner = profile.test_runner or "the project test runner"
+    runner = profile.test_runner
     if not profile.test_runner:
         gaps.append(
             Gap(
@@ -47,11 +50,33 @@ def find_gaps(
                 heuristic=True,
             )
         )
-    test_text = _test_corpus(profile)
+    test_names = _test_identifiers(profile, cache)
+    measured = _any_measured(functions)
     for function in functions:
-        gap = _function_gap(function, test_text, runner, measured=_any_measured(functions))
+        gap = _function_gap(function, test_names, runner, measured=measured)
         if gap is not None:
             gaps.append(gap)
+    if profile.skipped_projects:
+        listed = ", ".join(profile.skipped_projects[:12])
+        more = len(profile.skipped_projects) - 12
+        if more > 0:
+            listed = f"{listed}, and {more} more"
+        gaps.append(
+            Gap(
+                id="",
+                severity="high" if not profile.source_files else "low",
+                kind="skipped-workspaces",
+                title=f"{len(profile.skipped_projects)} nested projects were not analyzed",
+                why=(
+                    "Each of these directories has its own manifest, so this run did not read them: "
+                    f"{listed}. A workspace root is not the product."
+                ),
+                file="",
+                symbol=None,
+                suggestion="Run recoverage on each nested directory.",
+                heuristic=False,
+            )
+        )
     gaps.extend(extra or [])
     gaps.sort(key=lambda gap: (SEVERITY_ORDER.get(gap.severity, 9), gap.file, gap.symbol or "", gap.kind))
     for index, gap in enumerate(gaps, start=1):
@@ -63,11 +88,12 @@ def _any_measured(functions: list[MappedFunction]) -> bool:
     return any(item.file_measured or item.coverage_ratio is not None for item in functions)
 
 
-def _function_gap(function: MappedFunction, test_text: str, runner: str, *, measured: bool) -> Gap | None:
+def _function_gap(function: MappedFunction, test_names: frozenset[str], runner: str | None, *, measured: bool) -> Gap | None:
     spec = function.spec
     if spec.name.startswith("_"):
         return None
-    referenced = bool(re.search(rf"\b{re.escape(spec.name)}\b", test_text))
+    # Set membership, not one regex scan of the whole test corpus per function.
+    referenced = spec.name in test_names
     ratio = function.coverage_ratio
     tags = ", ".join(spec.risk_tags) if spec.risk_tags else "no special risk tags"
     location = f"{spec.file}:{spec.lineno}"
@@ -86,7 +112,7 @@ def _function_gap(function: MappedFunction, test_text: str, runner: str, *, meas
             ),
             file=spec.file,
             symbol=spec.qualname,
-            suggestion=f"Install a coverage tool and add a {runner} test that calls {spec.qualname} at each branch.",
+            suggestion=f"Install a coverage tool and add {_a_test(runner)} that calls {spec.qualname} at each branch.",
             heuristic=True,
         )
 
@@ -109,7 +135,7 @@ def _function_gap(function: MappedFunction, test_text: str, runner: str, *, meas
             file=spec.file,
             symbol=spec.qualname,
             suggestion=(
-                f"Add a {runner} test that calls {spec.name}({', '.join(spec.parameters) or ''}) "
+                f"Add {_a_test(runner)} that calls {spec.name}({', '.join(spec.parameters) or ''}) "
                 f"and asserts each branch ({spec.branch_count} static decision points)."
             ),
             heuristic=False,
@@ -130,7 +156,7 @@ def _function_gap(function: MappedFunction, test_text: str, runner: str, *, meas
             ),
             file=spec.file,
             symbol=spec.qualname,
-            suggestion=f"Extend the {runner} tests so the uncovered branches in {spec.qualname} actually run.",
+            suggestion=f"Extend {_the_tests(runner)} so the uncovered branches in {spec.qualname} actually run.",
             heuristic=False,
         )
 
@@ -146,7 +172,7 @@ def _function_gap(function: MappedFunction, test_text: str, runner: str, *, meas
             ),
             file=spec.file,
             symbol=spec.qualname,
-            suggestion=f"Name {spec.name} in a {runner} test and assert the outcome you care about.",
+            suggestion=f"Name {spec.name} in {_a_test(runner)} and assert the outcome you care about.",
             heuristic=True,
         )
     return None
@@ -171,11 +197,23 @@ def parse_error_gaps(errors: list[tuple[str, str]]) -> list[Gap]:
     return gaps
 
 
-def _test_corpus(profile: ProjectProfile) -> str:
-    root = Path(profile.root)
-    chunks = []
+def _a_test(runner: str | None) -> str:
+    return f"a {runner} test" if runner else "a test"
+
+
+def _the_tests(runner: str | None) -> str:
+    return f"the {runner} tests" if runner else "the tests"
+
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _test_identifiers(profile: ProjectProfile, cache: SourceCache | None) -> frozenset[str]:
+    """Every identifier token named in any test file. Built once, O(total test bytes)."""
+    cache = cache or SourceCache(Path(profile.root))
+    names: set[str] = set()
     for relative in profile.test_files:
-        path = root / relative
-        if path.is_file():
-            chunks.append(path.read_text(encoding="utf-8", errors="replace"))
-    return "\n".join(chunks)
+        text = cache.text(relative)
+        if text:
+            names.update(_IDENTIFIER.findall(text))
+    return frozenset(names)

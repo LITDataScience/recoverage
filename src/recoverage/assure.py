@@ -8,10 +8,10 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from recoverage.generate import PlannedTest
+from recoverage.proc import child_env, run_tree, temp_copy
 from recoverage.models import Analysis
 from recoverage.mutate import mutate_function_source
 
@@ -25,13 +25,7 @@ def assure_and_write(analysis: Analysis, planned: list[tuple[str, str]], *, dry_
         trace.append({"agent": "tester", "action": "dry-run", "files": [path for path, _content in planned]})
         return [PlannedTest(path=path, content=content, action="dry-run") for path, content in planned], trace
     root = Path(analysis.project.root).resolve()
-    parent = Path(tempfile.mkdtemp(prefix="recoverage-sandbox-"))
-    sandbox = parent / "project"
-    shutil.copytree(
-        root,
-        sandbox,
-        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "recoverage-out", ".coverage", "*.pyc"),
-    )
+    parent, sandbox = temp_copy(root, prefix="recoverage-sandbox-")
     written: list[Path] = []
     try:
         for relative, content in planned:
@@ -185,18 +179,16 @@ def _failed_names(output: str) -> set[str]:
 
 
 def _pytest(sandbox: Path, analysis: Analysis) -> subprocess.CompletedProcess:
-    env = os.environ.copy()
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PYTHONPATH"] = _sandbox_import(sandbox, analysis)
-    return subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider"],
-        cwd=sandbox,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=180,
-        check=False,
-    )
+    env = child_env({"PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": _sandbox_import(sandbox, analysis)})
+    try:
+        return run_tree(
+            [sys.executable, "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider"],
+            cwd=str(sandbox),
+            env=env,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(["pytest"], 124, "", "timeout")
 
 
 def _covered_lines(sandbox: Path, analysis: Analysis) -> int:

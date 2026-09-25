@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import shlex
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from recoverage.adapters.static import unmeasured
+from recoverage.proc import child_env, run_tree
 from recoverage.models import CoverageResult, FileCoverage, FileStructure, ProjectProfile
 
 
@@ -15,9 +19,19 @@ def run_javascript(
     structures: list[FileStructure],
     output_dir: Path,
 ) -> CoverageResult:
+    report_dir = Path(tempfile.mkdtemp(prefix="recoverage-js-cov-"))
+    try:
+        return _run_javascript(profile, structures, report_dir)
+    finally:
+        shutil.rmtree(report_dir, ignore_errors=True)
+
+
+def _run_javascript(
+    profile: ProjectProfile,
+    structures: list[FileStructure],
+    report_dir: Path,
+) -> CoverageResult:
     tool = profile.coverage_tool or ""
-    report_dir = output_dir / "js-coverage"
-    report_dir.mkdir(parents=True, exist_ok=True)
     test_cmd = _test_command(profile)
     if tool == "c8":
         command = ["npx", "--no-install", "c8", "--reporter=json", "--report-dir", str(report_dir), *test_cmd]
@@ -26,25 +40,22 @@ def run_javascript(
     else:
         return unmeasured(profile, structures, notes=[f"Unsupported JS coverage tool: {tool}"])
     try:
-        completed = subprocess.run(
-            command,
-            cwd=profile.root,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        completed = run_tree(command, cwd=str(profile.root), env=child_env(), timeout=180)
+    except subprocess.TimeoutExpired:
+        result = unmeasured(profile, structures, notes=[f"{tool} timed out after 180s."], tool=tool)
+        result.command = command
+        result.tests_exit_code = 124
+        return result
+    except OSError as exc:
         result = unmeasured(profile, structures, notes=[f"{tool} did not finish: {exc}"], tool=tool)
         result.command = command
         return result
     payload_path = _find_istanbul_json(report_dir)
     if payload_path is None:
-        tail = (completed.stdout + "\n" + completed.stderr).strip().splitlines()
         result = unmeasured(
             profile,
             structures,
-            notes=[f"{tool} produced no coverage JSON.", " ".join(tail[-4:])],
+            notes=[f"{tool} produced no coverage JSON."],
             tool=tool,
         )
         result.command = command
@@ -122,9 +133,34 @@ def _find_istanbul_json(report_dir: Path) -> Path | None:
 
 
 def _test_command(profile: ProjectProfile) -> list[str]:
+    scripted = _script_test(profile)
+    if scripted:
+        return scripted
     if profile.test_runner == "vitest":
         return ["npx", "--no-install", "vitest", "run"]
     return ["npx", "--no-install", "jest", "--runInBand"]
+
+
+def _script_test(profile: ProjectProfile) -> list[str] | None:
+    """Use package.json scripts.test when it is a single argv, not a shell pipeline."""
+    path = Path(profile.root) / "package.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    script = str((data.get("scripts") or {}).get("test") or "")
+    if not script or any(char in script for char in "&|;<>`$()"):
+        return None
+    parts = shlex.split(script, posix=True)
+    if not parts:
+        return None
+    if parts[0] in {"vitest", "jest"}:
+        return ["npx", "--no-install", *parts]
+    if parts[0] in {"npm", "pnpm", "yarn", "npx", "node", "turbo"}:
+        return parts
+    return None
 
 
 def _totals(

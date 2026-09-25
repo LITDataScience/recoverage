@@ -1,0 +1,91 @@
+# Pipeline
+
+`run_analysis` in `src/recoverage/pipeline.py` always runs every phase below. There is no fast mode and no flag to skip an engine.
+
+```mermaid
+flowchart LR
+  discover[discover.py] --> structure[structure.py]
+  structure --> coverage[adapters]
+  coverage --> mapcov[mapcov.py]
+  mapcov --> gaps[gaps.py]
+  gaps --> llm[llm.enrich_gaps]
+  discover --> graph[graph.py]
+  mapcov --> engines[pbt mutate perf sbst blast entropy audit]
+  graph --> engines
+  engines --> score[score.py]
+  score --> outputs[Markdown HTML PDF analysis.json]
+  outputs --> generate[drafts.py plus assure.py]
+```
+
+`generate` is a separate command. It reuses `analysis.json` when that file is already in the output directory.
+
+## Module map
+
+| Module | Role |
+| --- | --- |
+| `cli.py` | argparse. Exit codes. LLM mode. |
+| `pipeline.py` | Orders the phases, writes `analysis.json`, `execute_run` / `execute_report` / `execute_generate`. |
+| `discover.py` | Walks the tree. Language, runner, packages, flake markers. Suffix check before `stat`; 20_000 files or 200 MB cap. |
+| `sources.py` | `SourceCache`: one read and one `ast.parse` per file per run, 64 MB LRU, shared by structure, gaps, audit, and entropy. |
+| `structure.py` | Functions, branches, cyclomatic complexity, heuristic risk tags. Statement-skeleton walks; one pass per function body. |
+| `adapters/python_cov.py` | `coverage run --branch`, then `coverage json`. |
+| `adapters/javascript_cov.py` | `npx --no-install` `c8` or `nyc`. Parses Istanbul JSON. |
+| `adapters/static.py` | `measured=False` when nothing ran. |
+| `mapcov.py` | Joins statement hits onto functions via `CoverageIndex` (exact path, then basename bucket). Package stats. Hotspots. |
+| `gaps.py` | Untested functions, partial branches, missing direct tests, no runner, flake markers, parse errors. Test corpus is one identifier set. |
+| `graph.py` | Tree-sitter entities, call edges resolved through a suffix index, PageRank with convergence stop, Louvain. `CodeGraph` carries symbol and adjacency indexes for O(deg) queries. |
+| `entropy.py` | Lexical ΔH over spec tokens vs test tokens. |
+| `blast.py` | Union coverage of a 2-hop call-graph radius. |
+| `pbt.py` | Property trials through `probe_worker`. |
+| `sbst.py` | Search for arguments through `probe_worker`. Feeds drafts. |
+| `proc.py` | Child env allowlist, process-tree kill, `temp_copy` (symlinks kept as links, VCS and dependency dirs skipped). |
+| `mutate.py` | Operator flip on a temp copy. Up to 5 functions. |
+| `perf.py` | Mann-Whitney on this revision. |
+| `audit.py` | CRAP, assertion strength, dependency authenticity, static flake risk. Outside MRS. |
+| `score.py` | Weighted MRS and the gate. Reads `RUBRIC.md` at import. |
+| `llm.py` | Optional OpenAI-compatible chat client. |
+| `report.py` | Markdown. |
+| `html_report.py` | Self-contained HTML. Escapes text. |
+| `charts.py` | Three matplotlib PNGs. |
+| `typst_render.py` | `mrs.json` + `templates/report.typ` → PDF. |
+| `drafts.py` | Pytest and Hypothesis source from SBST cases and PBT rows. |
+| `assure.py` | Temp copy, compile, five runs, coverage-or-kill filter, copy back. |
+| `generate.py` | `PlannedTest` record. |
+| `display.py` | Loopback server for `show`. |
+| `mcp_api.py` | In-process JSON-RPC over `CodeGraph`. No socket. |
+| `models.py` | Dataclasses and `analysis.json` (de)serialization. |
+| `version.py` | `__version__`, also duplicated in `pyproject.toml`. |
+
+## Discovery
+
+`discover` prunes `.git`, virtualenvs, `node_modules`, `.next`, caches, `dist`, `build`, `recoverage-out`, `sample-report`, and any directory whose name starts with `.` before descending. A directory that contains its own `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, or `pom.xml` is recorded on `skipped_projects` and not walked. Files over 1_000_000 bytes are skipped. The walk stops after 20_000 files and says the report is partial.
+
+Primary language is the source extension with the most files. A `pyproject.toml` with any Python file selects Python. A `package.json` and no `pyproject.toml` selects TypeScript or JavaScript only when those files are at least as numerous as every other language. Python packages are the immediate children of `src/` that contain `__init__.py`, or of the project root when that layout is absent. Namespace packages and deeper layouts are not detected.
+
+Python runner: pytest if `pyproject.toml` has `[tool.pytest]`, or `pytest.ini`, `conftest.py`, or `setup.cfg` mentions pytest. Otherwise a sample of test files is scanned for `unittest`. JavaScript/TypeScript: vitest if the config or dependency or `scripts.test` says so, else jest when a config, dependency, or test files exist.
+
+Python coverage tool is always reported as `coverage.py`. JS coverage tool is `c8` or `istanbul` only when the binary is under `node_modules/.bin` or the name is in `package.json`.
+
+## Coverage
+
+Python: `coverage run --branch --source=<packages>`, then pytest (or `unittest discover`). Timeout 180s. Unimported Python modules are counted as uncovered in the project percentage, and the raw tool percentage is printed beside it. With `--branch`, coverage.py's `percent_covered` blends arcs into statements, so the score uses statement coverage (`covered_lines / num_statements`), not that headline.
+
+A nonzero pytest exit still returns `measured=True` when `coverage.json` was written. The gate then blocks. See [scoring.md](scoring.md). Test stdout and stderr tails are not stored.
+
+JS: `package.json` `scripts.test` when it is a plain argv (`vitest`, `jest`, `npm`, `pnpm`, `yarn`, `npx`, `node`, `turbo`). Shell pipelines are ignored and the fallback is `npx --no-install vitest run` or `jest --runInBand`, wrapped in `c8` or `nyc`. Timeout 180s.
+
+Other languages, or a tree with no runner, get the static adapter: `line_percent` is `None`, not `0`.
+
+File matching is exact, or the single coverage key that shares a directory-bounded suffix. Two files named `pay.py` in different directories are not joined.
+
+## Structure and risk
+
+Python uses `ast`. Risk is a name list (`charge`, `auth`, `password`, …) plus body patterns (`eval`, `subprocess`, `shell=True`, …) plus a bump when complexity is at least 8. JavaScript and TypeScript function extraction is a regex, not the Tree-sitter grammar. The Tree-sitter JavaScript grammar is used only by the call graph. Other languages get a generic `func`/`fn`/`def` scan with no branches.
+
+## Gaps
+
+Sorted critical → low, then id `G01`…. Kinds: `no-test-runner`, `flake-marker`, `unmeasured-function`, `untested-function`, `partial-branch`, `missing-critical-path-test`, `parse-error`, `llm-error`. A public function at 0% coverage with risk ≥ 0.7 is `critical`. That is a heuristic, not a proof the lines are untested when coverage was not measured.
+
+## Graph query
+
+`mcp_api.handle` speaks one JSON-RPC request (`initialize`, `tools/list`, `tools/call`) and returns one response. Tools are `query_context`, `pagerank`, and `communities`. It does not open a socket and it is not a running MCP server. `query_context` returns the focal symbol's signature, docstring, byte range, PageRank, community, and up to 8 neighbors.

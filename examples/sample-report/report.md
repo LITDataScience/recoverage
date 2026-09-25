@@ -6,7 +6,7 @@
 
 Not mergeable. Measured statement coverage is 16.7%, under 20%, and the Merge Readiness Score is 32.5, under 40.
 
-Project: `/agent/recoverage/examples/fixture`  
+Project: `examples/fixture`  
 Language: python  
 Test runner: pytest  
 Coverage tool: coverage.py  
@@ -167,7 +167,7 @@ Suggestion: Extend the pytest tests so the uncovered branches in subtotal actual
 
 Read the findings from the top. Critical and high items are the ones that move the gate.
 
-- `recoverage generate` keeps a draft only after a sandbox compile and 5 passing runs, and only if it adds covered lines or kills a mutant the current suite left alive. It does not lock in observed return values.
+- `recoverage generate` keeps a draft only after a temp-copy compile and 5 passing runs, and only if it adds covered lines or kills a mutant the current suite left alive. It does not lock in observed return values.
 - Recoverage will not delete or overwrite an existing test file.
 - Prompt coverage ΔH is a lexical entropy proxy unless an attention model is actually queried. The report names which one ran.
 - Mutation counts come from temp-copy mutants. If that section says mutation did not run, it did not.
@@ -197,7 +197,7 @@ The score is the Merge Readiness Score (MRS), 0–100. It is the PRD's weighted 
 
 Mutation testing is a separate measurement. When it runs, mutants are applied on a temp copy and the kill count is printed. It is not silently folded into MRS. If it does not run, the report says it did not run.
 
-Flake markers found by a static scan subtract 2 points, floored at 0. That scan is not a reproduction. Drafts that `recoverage generate` keeps are executed 5 times in a sandbox before they are copied back.
+Flake markers found by a static scan subtract 2 points, floored at 0. That scan is not a reproduction. Drafts that `recoverage generate` keeps are executed 5 times in a temp copy before they are copied back.
 
 ### Gates
 

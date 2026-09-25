@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from recoverage.models import MappedFunction, ProjectProfile
+from recoverage.probe import ProbeSession
 
 _BANNED = (
     "subprocess",
@@ -46,16 +47,23 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
     failed = 0
     falsified: list[dict] = []
     properties: list[dict] = []
-    root_inserted = profile.import_root not in sys.path
-    if root_inserted:
-        sys.path.insert(0, profile.import_root)
-    previous = sys.dont_write_bytecode
-    sys.dont_write_bytecode = True
+    session = ProbeSession(profile)
     try:
         for function in targets:
             module = _module(function.spec.file, profile.src_layout)
-            imported = _load_module(profile, function.spec.file, module)
-            target = getattr(imported, function.spec.name)
+
+            def target(*args, _function=function):
+                payload = session.call(_function.spec.file, _function.spec.qualname, args)
+                kind = payload.get("error")
+                if kind:
+                    mapped = {
+                        "TypeError": TypeError,
+                        "ValueError": ValueError,
+                        "KeyError": KeyError,
+                        "OverflowError": OverflowError,
+                    }.get(kind, RuntimeError)
+                    raise mapped(kind)
+                return payload.get("value")
             rng = random.Random(function.spec.qualname)
             local_pass = 0
             local_fail = 0
@@ -64,6 +72,8 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
                 kind = kinds[index % 3]
                 args = _sample(function, rng, kind)
                 ok, shrunk = _check(target, args, kind, function)
+                if ok is None:
+                    continue
                 if ok:
                     passed += 1
                     local_pass += 1
@@ -91,9 +101,7 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
                 }
             )
     finally:
-        sys.dont_write_bytecode = previous
-        if root_inserted and profile.import_root in sys.path:
-            sys.path.remove(profile.import_root)
+        session.close()
     total = passed + failed
     return {
         "ran": True,
@@ -109,20 +117,29 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
     }
 
 
-def _targets(profile: ProjectProfile, functions: list[MappedFunction]) -> list[MappedFunction]:
+def _targets(profile: ProjectProfile, functions: list[MappedFunction], limit: int = 4) -> list[MappedFunction]:
+    """Stops at `limit`; the banned-token scan is done once per file, not once per function."""
     root = Path(profile.root)
+    banned_by_file: dict[str, bool] = {}
     chosen = []
     for function in functions:
         if not function.spec.is_public or function.spec.is_method or not function.spec.file.endswith(".py"):
             continue
-        path = root / function.spec.file
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if any(token in text for token in _BANNED):
+        relative = function.spec.file
+        if relative not in banned_by_file:
+            path = root / relative
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                banned_by_file[relative] = True
+            else:
+                banned_by_file[relative] = any(token in text for token in _BANNED)
+        if banned_by_file[relative]:
             continue
         chosen.append(function)
-    return chosen[:4]
+        if len(chosen) == limit:
+            break
+    return chosen
 
 
 def _check(target, args: tuple, kind: str, function: MappedFunction) -> tuple[bool, tuple]:
@@ -130,7 +147,7 @@ def _check(target, args: tuple, kind: str, function: MappedFunction) -> tuple[bo
         first = target(*args)
         second = target(*args) if kind == "determinism" else first
     except (TypeError, ValueError, KeyError, OverflowError):
-        return True, args
+        return None, args
     except Exception:
         return False, _shrink(target, args, kind, function)
     if kind == "determinism" and first != second:
@@ -142,7 +159,7 @@ def _check(target, args: tuple, kind: str, function: MappedFunction) -> tuple[bo
         try:
             other = target(*swapped)
         except (TypeError, ValueError, KeyError, OverflowError):
-            return True, args
+            return None, args
         except Exception:
             return False, _shrink(target, swapped, kind, function)
         if type(other) is not type(first):
@@ -177,7 +194,7 @@ def _check_once(target, args: tuple, kind: str) -> tuple[bool, tuple]:
             return first == second, args
         return True, args
     except (TypeError, ValueError, KeyError, OverflowError):
-        return True, args
+        return None, args
     except Exception:
         return False, args
 

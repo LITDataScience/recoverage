@@ -25,6 +25,10 @@ jobs:
           #   pip install -e ".[test]"
       - name: Recoverage gate
         run: recoverage run . --output recoverage-out --no-llm --threshold merge-ready
+      # analysis.json stores absolute paths, docstrings, the coverage command,
+      # test-output tails, and SBST arguments copied from source. Drop it from
+      # this upload if the artifact store is wider than repo read access.
+      # See docs/reports.md and docs/security.md.
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4

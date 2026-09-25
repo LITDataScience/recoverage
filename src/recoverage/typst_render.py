@@ -24,6 +24,10 @@ _BADGE = {
 }
 
 
+class TypstMissing(RuntimeError):
+    """The Typst binary is absent. Markdown and HTML are still valid output."""
+
+
 def write_typst_pdf(analysis: Analysis, output_dir: Path) -> Path:
     typst = _find_typst()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -140,4 +144,4 @@ def _find_typst() -> str:
     candidate = Path.home() / ".local" / "bin" / "typst"
     if candidate.is_file():
         return str(candidate)
-    raise RuntimeError("typst CLI is not on PATH. Install it from https://github.com/typst/typst/releases")
+    raise TypstMissing("typst CLI is not on PATH. Install it from https://github.com/typst/typst/releases.")

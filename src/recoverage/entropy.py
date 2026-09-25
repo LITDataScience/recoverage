@@ -13,33 +13,30 @@ from pathlib import Path
 
 from recoverage.graph import CodeGraph
 from recoverage.models import ProjectProfile
+from recoverage.sources import SourceCache
 
 _TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 
 
-def prompt_coverage(profile: ProjectProfile, graph: CodeGraph) -> dict:
-    specs = []
+def prompt_coverage(profile: ProjectProfile, graph: CodeGraph, *, cache: SourceCache | None = None) -> dict:
+    """Streams tokens into counters. No concatenated corpus string is ever built."""
+    root = Path(profile.root)
+    cache = cache or SourceCache(root)
+    spec_counts: Counter[str] = Counter()
     for entity in graph.entities:
         if entity.docstring:
-            specs.append(entity.docstring)
+            spec_counts.update(_tokens(entity.docstring))
         if entity.signature:
-            specs.append(entity.signature)
-    root = Path(profile.root)
-    for relative in profile.source_files:
-        path = root / relative
-        if path.suffix == ".md":
-            continue
-    readme = root / "README.md"
-    if readme.is_file():
-        specs.append(readme.read_text(encoding="utf-8", errors="replace"))
-    tests = []
+            spec_counts.update(_tokens(entity.signature))
+    readme = cache.text("README.md")
+    if readme:
+        spec_counts.update(_tokens(readme))
+    test_tokens: set[str] = set()
     for relative in profile.test_files:
-        path = root / relative
-        if path.is_file():
-            tests.append(path.read_text(encoding="utf-8", errors="replace"))
-    spec_tokens = _tokens("\n".join(specs))
-    test_tokens = set(_tokens("\n".join(tests)))
-    if not spec_tokens:
+        text = cache.text(relative)
+        if text:
+            test_tokens.update(_tokens(text))
+    if not spec_counts:
         return {
             "ran": False,
             "method": "lexical-entropy",
@@ -49,9 +46,9 @@ def prompt_coverage(profile: ProjectProfile, graph: CodeGraph) -> dict:
             "coverage": None,
             "note": "No natural-language specification text was found. Prompt coverage was not scored from an LLM.",
         }
-    h_spec = _shannon(spec_tokens)
-    residual = [token for token in spec_tokens if token not in test_tokens]
-    h_residual = _shannon(residual) if residual else 0.0
+    h_spec = _shannon(spec_counts)
+    residual = Counter({token: count for token, count in spec_counts.items() if token not in test_tokens})
+    h_residual = _shannon(residual)
     delta = max(0.0, h_spec - h_residual)
     coverage = 0.0 if h_spec == 0 else max(0.0, min(100.0, 100.0 * delta / h_spec))
     return {
@@ -72,10 +69,11 @@ def _tokens(text: str) -> list[str]:
     return [token.lower() for token in _TOKEN.findall(text)]
 
 
-def _shannon(tokens: list[str]) -> float:
-    if not tokens:
+def _shannon(counts: Counter[str] | list[str]) -> float:
+    if not isinstance(counts, Counter):
+        counts = Counter(counts)
+    if not counts:
         return 0.0
-    counts = Counter(tokens)
     total = sum(counts.values())
     entropy = 0.0
     for count in counts.values():

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -127,6 +129,7 @@ class ScoreResult:
     factors: list[ScoreFactor]
     mutation_testing_ran: bool
     notes: list[str]
+    tests_failed: bool = False
 
 
 @dataclass
@@ -143,6 +146,8 @@ class ProjectProfile:
     import_root: str
     src_layout: bool
     flake_markers: list[str]
+    skipped_projects: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -166,6 +171,30 @@ def _from_dict(cls: type, data: dict[str, Any]) -> Any:
 
 def analysis_to_dict(analysis: Analysis) -> dict[str, Any]:
     return asdict(analysis)
+
+
+# A static run on a 20_000-function tree writes about 23 MB compact. 100 MB leaves room
+# for the discovery cap without letting an arbitrary file be parsed.
+MAX_ANALYSIS_BYTES = 100_000_000
+_ANALYSIS_KEYS = ("version", "generated_at", "project", "coverage", "functions", "modules", "hotspots", "gaps", "score")
+
+
+def load_analysis(path: Path) -> Analysis:
+    """Read analysis.json. Reject a huge file, a non-object, or a version this build cannot load."""
+    from recoverage.version import __version__
+
+    size = path.stat().st_size
+    if size > MAX_ANALYSIS_BYTES:
+        raise ValueError(f"analysis.json is {size} bytes; the limit is {MAX_ANALYSIS_BYTES}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("analysis.json must be a JSON object")
+    if data.get("version") != __version__:
+        raise ValueError(f"analysis.json version {data.get('version')} does not match recoverage {__version__}")
+    missing = [key for key in _ANALYSIS_KEYS if key not in data]
+    if missing:
+        raise ValueError("analysis.json is missing: " + ", ".join(missing))
+    return analysis_from_dict(data)
 
 
 def analysis_from_dict(data: dict[str, Any]) -> Analysis:

@@ -3,7 +3,7 @@
   "generated_at": "2026-09-23T15:33:19+00:00",
   "llm": "off",
   "project": {
-    "root": "/agent/recoverage/examples/fixture",
+    "root": "examples/fixture",
     "primary_language": "python",
     "languages": [
       "python"
@@ -23,7 +23,7 @@
     "packages": [
       "shop"
     ],
-    "import_root": "/agent/recoverage/examples/fixture/src",
+    "import_root": "examples/fixture/src",
     "src_layout": true,
     "flake_markers": []
   },
@@ -153,7 +153,7 @@
       "-q",
       "--tb=line",
       "-o",
-      "cache_dir=/agent/recoverage/examples/sample-report/.pytest_cache"
+      "cache_dir=examples/sample-report/.pytest_cache"
     ]
   },
   "functions": [

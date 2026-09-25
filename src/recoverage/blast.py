@@ -21,6 +21,11 @@ def blast_radius(
     if not radius:
         radius = set(seeds)
     in_radius = [item for item in functions if item.spec.qualname in radius or item.spec.name in radius]
+    if not diff:
+        # Whole-graph radius: the sorted symbol list is redundant with graph.entities and O(V log V) of JSON.
+        radius_out: list[str] = []
+    else:
+        radius_out = sorted(radius)
     executable = sum(item.executable_lines for item in in_radius)
     covered = sum(item.covered_lines for item in in_radius)
     if executable:
@@ -37,7 +42,8 @@ def blast_radius(
     )
     return {
         "diff": diff,
-        "radius": sorted(radius),
+        "radius": radius_out,
+        "radius_size": len(radius),
         "union_coverage": union,
         "functions": len(in_radius),
         "note": note,
@@ -46,26 +52,29 @@ def blast_radius(
 
 def _walk(graph: CodeGraph, seeds: list[str]) -> set[str]:
     known = {entity.qualname for entity in graph.entities}
+    by_suffix: dict[str, list[str]] = {}
+    for item in known:
+        by_suffix.setdefault(item.rsplit(".", 1)[-1], []).append(item)
     start = set()
     for seed in seeds:
         if seed in known:
             start.add(seed)
         else:
-            start.update(item for item in known if item.endswith("." + seed) or item == seed)
+            start.update(by_suffix.get(seed, ()))
     if not start:
         return set()
-    incoming: dict[str, set[str]] = {name: set() for name in known}
-    outgoing: dict[str, set[str]] = {name: set() for name in known}
+    # Undirected adjacency once, then a two-hop BFS. O(V + E).
+    adjacent: dict[str, set[str]] = {}
     for src, dst, _kind in graph.edges:
-        outgoing.setdefault(src, set()).add(dst)
-        incoming.setdefault(dst, set()).add(src)
+        adjacent.setdefault(src, set()).add(dst)
+        adjacent.setdefault(dst, set()).add(src)
     seen = set(start)
     frontier = list(start)
     depth = 0
     while frontier and depth < 2:
         nxt = []
         for node in frontier:
-            for other in outgoing.get(node, ()) | incoming.get(node, ()):
+            for other in adjacent.get(node, ()):
                 if other not in seen:
                     seen.add(other)
                     nxt.append(other)

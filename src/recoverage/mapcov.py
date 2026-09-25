@@ -13,22 +13,23 @@ from recoverage.models import (
 
 
 def map_coverage(structures: list[FileStructure], coverage: CoverageResult) -> list[MappedFunction]:
-    files = {item.path: item for item in coverage.files}
+    index = CoverageIndex(coverage.files)
     mapped: list[MappedFunction] = []
     for structure in structures:
-        file_cov = _match(structure.path, files)
+        file_cov = index.match(structure.path)
+        lines = index.lines(file_cov) if file_cov is not None else None
         for function in structure.functions:
-            mapped.append(_map_function(function, file_cov, coverage.measured))
+            mapped.append(_map_function(function, file_cov, coverage.measured, lines))
     return mapped
 
 
 def module_stats(structures: list[FileStructure], coverage: CoverageResult) -> list[ModuleStat]:
-    files = {item.path: item for item in coverage.files}
+    index = CoverageIndex(coverage.files)
     stats: list[ModuleStat] = []
     for structure in structures:
         if structure.functions == [] and structure.statement_count == 0:
             continue
-        match = _match(structure.path, files) if coverage.measured else None
+        match = index.match(structure.path) if coverage.measured else None
         if match is None:
             stats.append(
                 ModuleStat(
@@ -68,7 +69,12 @@ def hotspots(functions: list[MappedFunction], limit: int = 8) -> list[Hotspot]:
     ]
 
 
-def _map_function(function, file_cov: FileCoverage | None, measured: bool) -> MappedFunction:
+def _map_function(
+    function,
+    file_cov: FileCoverage | None,
+    measured: bool,
+    lines: tuple[frozenset[int], frozenset[int]] | None = None,
+) -> MappedFunction:
     if not measured or file_cov is None:
         return MappedFunction(
             spec=function,
@@ -78,8 +84,7 @@ def _map_function(function, file_cov: FileCoverage | None, measured: bool) -> Ma
             missing_lines=list(function.statement_lines) if measured and file_cov is None else [],
             file_measured=file_cov is not None,
         )
-    executed = set(file_cov.executed_lines)
-    missing = set(file_cov.missing_lines)
+    executed, missing = lines if lines is not None else _line_sets(file_cov)
     known = executed | missing
     in_function = [line for line in function.statement_lines if line in known]
     if not in_function:
@@ -120,10 +125,52 @@ def _map_function(function, file_cov: FileCoverage | None, measured: bool) -> Ma
     )
 
 
+def _line_sets(file_cov: FileCoverage) -> tuple[frozenset[int], frozenset[int]]:
+    return frozenset(file_cov.executed_lines), frozenset(file_cov.missing_lines)
+
+
+class CoverageIndex:
+    """Exact-path lookup plus a basename bucket for the directory-bounded suffix rule.
+
+    Build is O(F). A lookup is O(1) exact, or O(k) where k is the number of coverage
+    files sharing the same basename, instead of O(F) per structure path. Line sets
+    are materialised once per file, not once per function in that file.
+    """
+
+    def __init__(self, files: list[FileCoverage]):
+        self.exact: dict[str, FileCoverage] = {}
+        self.by_name: dict[str, list[str]] = {}
+        self._lines: dict[str, tuple[frozenset[int], frozenset[int]]] = {}
+        for item in files:
+            self.exact[item.path] = item
+            self.by_name.setdefault(item.path.rsplit("/", 1)[-1], []).append(item.path)
+
+    def lines(self, file_cov: FileCoverage) -> tuple[frozenset[int], frozenset[int]]:
+        found = self._lines.get(file_cov.path)
+        if found is None:
+            found = _line_sets(file_cov)
+            self._lines[file_cov.path] = found
+        return found
+
+    def match(self, structure_path: str) -> FileCoverage | None:
+        found = self.exact.get(structure_path)
+        if found is not None:
+            return found
+        name = structure_path.rsplit("/", 1)[-1]
+        hits = [
+            key
+            for key in self.by_name.get(name, ())
+            if key.endswith("/" + structure_path) or structure_path.endswith("/" + key)
+        ]
+        if len(hits) == 1:
+            return self.exact[hits[0]]
+        return None
+
+
+def match_coverage(structure_path: str, files: dict[str, FileCoverage]) -> FileCoverage | None:
+    """Exact path, or the one key that is a directory-bounded suffix of the other."""
+    return CoverageIndex(list(files.values())).match(structure_path)
+
+
 def _match(structure_path: str, files: dict[str, FileCoverage]) -> FileCoverage | None:
-    if structure_path in files:
-        return files[structure_path]
-    for key, item in files.items():
-        if structure_path.endswith(key) or key.endswith(structure_path):
-            return item
-    return None
+    return match_coverage(structure_path, files)

@@ -81,14 +81,14 @@ def test_unmeasured_cannot_be_merge_ready(tmp_path):
 
 
 def test_gate_table_matches_rubric():
-    assert decide_gate(90, runner=False, measured=True, line=90, critical=0) == "blocked"
-    assert decide_gate(30, runner=True, measured=True, line=50, critical=0) == "blocked"
-    assert decide_gate(50, runner=True, measured=True, line=10, critical=0) == "blocked"
+    assert decide_gate(90, runner=False, measured=True, line=90, critical=0, tests_exit_code=0) == "blocked"
+    assert decide_gate(30, runner=True, measured=True, line=50, critical=0, tests_exit_code=0) == "blocked"
+    assert decide_gate(50, runner=True, measured=True, line=10, critical=0, tests_exit_code=0) == "blocked"
     assert decide_gate(90, runner=True, measured=False, line=None, critical=0) == "needs-review"
-    assert decide_gate(75, runner=True, measured=True, line=65, critical=1) == "needs-review"
-    assert decide_gate(75, runner=True, measured=True, line=65, critical=0) == "merge-ready"
-    assert decide_gate(90, runner=True, measured=True, line=88, critical=0) == "production-ready"
-    assert decide_gate(90, runner=True, measured=True, line=50, critical=0) == "needs-review"
+    assert decide_gate(75, runner=True, measured=True, line=65, critical=1, tests_exit_code=0) == "needs-review"
+    assert decide_gate(75, runner=True, measured=True, line=65, critical=0, tests_exit_code=0) == "merge-ready"
+    assert decide_gate(90, runner=True, measured=True, line=88, critical=0, tests_exit_code=0) == "production-ready"
+    assert decide_gate(90, runner=True, measured=True, line=50, critical=0, tests_exit_code=0) == "needs-review"
 
 
 def test_threshold_rank_and_number():
@@ -119,6 +119,7 @@ def test_blocked_copy_matches_the_reasons_that_fired(tmp_path):
         measured=True,
         line=16.7,
         critical=0,
+        tests_exit_code=0,
     )
 
     bare = score_project(
@@ -144,6 +145,41 @@ def test_rubric_mentions_mutation_honesty():
     assert "If it does not run, the report says it did not run." in RUBRIC_MD
     assert "temp copy" in RUBRIC_MD
     assert "production-ready" in RUBRIC_MD
+
+
+def test_nonzero_test_exit_blocks_every_named_gate(tmp_path):
+    assert decide_gate(90, runner=True, measured=True, line=88, critical=0, tests_exit_code=1) == "blocked"
+    text = explain_gate(
+        "blocked",
+        score=90,
+        runner=True,
+        measured=True,
+        line=88,
+        critical=0,
+        tests_exit_code=1,
+    )
+    assert "exited 1" in text
+    failed = score_project(
+        _profile(root=str(tmp_path)),
+        _coverage(line_percent=90.0, branch_percent=90.0, tests_exit_code=1),
+        [_fn("ok")],
+        [],
+        analytics={"pbt": {"ran": True, "trials": 10, "passed": 10}, "timing": {"ran": True, "regression": False}},
+    )
+    assert failed.gate == "blocked"
+    assert "exited 1" in failed.notes[0]
+    assert not meets_threshold(failed, "merge-ready")
+    assert not meets_threshold(failed, "production-ready")
+    assert decide_gate(90, runner=True, measured=True, line=88, critical=0, tests_exit_code=0) == "production-ready"
+    assert decide_gate(90, runner=True, measured=True, line=88, critical=0, tests_exit_code=None) == "blocked"
+    missing = score_project(
+        _profile(root=str(tmp_path)),
+        _coverage(line_percent=90.0, branch_percent=90.0, tests_exit_code=None),
+        [_fn("ok")],
+        [],
+    )
+    assert missing.tests_failed is True
+    assert not meets_threshold(missing, "70")
 
 
 def test_flake_marker_deducts(tmp_path):

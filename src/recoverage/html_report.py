@@ -85,6 +85,7 @@ code {{ font-family: ui-monospace, monospace; font-size: 0.92em; }}
     <tr><td>Coverage tool</td><td>{html.escape(coverage.tool)}</td></tr>
     <tr><td>Measured</td><td>{"yes" if coverage.measured else "no"}</td></tr>
   </table>
+  {"".join(f"<p>{html.escape(note)}</p>" for note in analysis.project.notes)}
 </section>
 <section>
   <h2>Score factors</h2>

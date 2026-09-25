@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from recoverage.graph import CodeGraph
+from recoverage.version import __version__
 
 PROTOCOL = "2024-11-05"
 TOOLS = [
@@ -44,7 +45,7 @@ def handle(message: dict[str, Any], graph: CodeGraph) -> dict[str, Any]:
             {
                 "protocolVersion": PROTOCOL,
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "recoverage", "version": "0.1.0"},
+                "serverInfo": {"name": "recoverage", "version": __version__},
             },
         )
     if method == "tools/list":

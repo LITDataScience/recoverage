@@ -22,9 +22,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project = Path(args.path).resolve()
         output = Path(args.output).resolve() if args.output else (project / "recoverage-out")
-        llm_mode = "off" if args.no_llm else "on" if args.llm else "auto"
+        llm_mode = _llm_mode(args)
         if args.command == "run":
-            analysis, code = execute_run(project, output, llm_mode=llm_mode, threshold=args.threshold)
+            if args.dynamic:
+                print("recoverage: dynamic mode executes project code as you. There is no OS sandbox.", file=sys.stderr)
+            analysis, code = execute_run(
+                project,
+                output,
+                llm_mode=llm_mode,
+                threshold=args.threshold,
+                dynamic=args.dynamic,
+                deep=args.deep,
+            )
             _print_summary(analysis, output)
             return code
         if args.command == "report":
@@ -35,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
                 llm_mode=llm_mode,
                 threshold=args.threshold,
                 analysis_path=analysis_path,
+                dynamic=args.dynamic,
+                deep=args.deep,
             )
             _print_summary(analysis, output)
             return code
@@ -43,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
             output,
             llm_mode=llm_mode,
             dry_run=args.dry_run,
+            dynamic=args.dynamic,
+            deep=args.deep,
         )
         _print_summary(analysis, output)
         mode = "dry-run" if args.dry_run else "wrote"
@@ -65,8 +78,17 @@ def _parser() -> argparse.ArgumentParser:
     def add_common(command: argparse.ArgumentParser, *, generate: bool = False) -> None:
         command.add_argument("path", nargs="?", default=".", help="Project root. Default: current directory.")
         command.add_argument("--output", help="Report directory. Default: <project>/recoverage-out")
-        command.add_argument("--llm", action="store_true", help="Require RECOVERAGE_LLM_API_KEY and enrich gaps.")
-        command.add_argument("--no-llm", action="store_true", help="Force the offline heuristic path.")
+        command.add_argument(
+            "--llm",
+            action="store_true",
+            help=(
+                "Opt in to an OpenAI-compatible call. Sends gap id, title, why, file, symbol, and suggestion, "
+                "plus SBST symbol and parameter names on a coverage stall. Requires RECOVERAGE_LLM_API_KEY."
+            ),
+        )
+        command.add_argument("--no-llm", action="store_true", help="Stay offline. This is the default.")
+        command.add_argument("--dynamic", action="store_true", help="Opt in to running the project's tests. Trusted code only. No OS sandbox.")
+        command.add_argument("--deep", action="store_true", help="With --dynamic, also run property, mutation, timing, and search probes out of process.")
         if generate:
             command.add_argument(
                 "--dry-run",
@@ -94,6 +116,15 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _llm_mode(args: argparse.Namespace) -> str:
+    """Network is opt-in. A key in the environment does not turn it on."""
+    if args.llm and args.no_llm:
+        raise ValueError("pass only one of --llm and --no-llm")
+    if args.llm:
+        return "on"
+    return "off"
+
+
 def _show(args: argparse.Namespace) -> int:
     try:
         html_path = locate_html(Path(args.path).resolve(), Path(args.output).resolve() if args.output else None)
@@ -115,7 +146,11 @@ def _print_summary(analysis, output: Path) -> None:
         counts[gap.severity] = counts.get(gap.severity, 0) + 1
     summary = ", ".join(f"{name} {counts[name]}" for name in ("critical", "high", "medium", "low") if name in counts)
     print(f"Gaps: {len(analysis.gaps)}" + (f" ({summary})" if summary else ""))
-    print(f"Reports: {output / 'report.md'} {output / 'report.html'} {output / 'report.pdf'}")
+    written = [output / "report.md", output / "report.html"]
+    pdf = output / "report.pdf"
+    if pdf.is_file():
+        written.append(pdf)
+    print("Reports: " + " ".join(str(path) for path in written))
     mutation_note = next((note for note in analysis.score.notes if "mutant" in note.lower() or "mutation" in note.lower()), "")
     print(mutation_note or "Mutation testing did not run.")
 

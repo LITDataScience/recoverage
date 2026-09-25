@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 from recoverage.models import MappedFunction, ProjectProfile
+from recoverage.sources import SourceCache
+from recoverage.structure import iter_statements
 
 _STDLIB = set(getattr(sys, "stdlib_module_names", ()))
 
@@ -23,11 +25,13 @@ def crap(complexity: int, coverage: float | None) -> float:
     return round((complexity**2) * ((1.0 - cov) ** 3) + complexity, 2)
 
 
-def audit_project(profile: ProjectProfile, functions: list[MappedFunction]) -> dict:
+def audit_project(profile: ProjectProfile, functions: list[MappedFunction], *, cache: SourceCache | None = None) -> dict:
+    cache = cache or SourceCache(Path(profile.root))
+    resolver = _Resolver(profile, cache)
     crap_report = _crap(functions)
-    assertions = _assertions(profile)
-    authenticity = _authenticity(profile)
-    flakiness = _firi(profile)
+    assertions = _assertions(profile, cache)
+    authenticity = _authenticity(profile, resolver)
+    flakiness = _firi(profile, cache)
     return {
         "crap": crap_report,
         "assertions": assertions,
@@ -74,23 +78,18 @@ def _crap(functions: list[MappedFunction]) -> dict:
     }
 
 
-def _assertions(profile: ProjectProfile) -> dict:
+def _assertions(profile: ProjectProfile, cache: SourceCache) -> dict:
     total = 0
     substantive = 0
     vacuous: list[dict] = []
     roulette = 0
     magic = 0
     aaa = 0
-    root = Path(profile.root)
     for relative in profile.test_files:
         if not relative.endswith(".py"):
             continue
-        path = root / relative
-        if not path.is_file():
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
+        tree = cache.tree(relative)
+        if tree is None:
             continue
         for node in tree.body:
             targets = []
@@ -180,7 +179,56 @@ def _aaa_violation(function: ast.AST) -> bool:
     return False
 
 
-def _authenticity(profile: ProjectProfile) -> dict:
+class _Resolver:
+    """Memoized module-file lookup and module export sets for one audit run.
+
+    Without this every `from pkg.mod import name` re-stats up to four candidate
+    paths and re-parses the target module. With it each module is resolved and
+    parsed at most once per run.
+    """
+
+    def __init__(self, profile: ProjectProfile, cache: SourceCache):
+        self.profile = profile
+        self.cache = cache
+        self._files: dict[str, str | None] = {}
+        self._exports: dict[str, frozenset[str] | None] = {}
+
+    def module_file(self, module: str) -> str | None:
+        if module not in self._files:
+            self._files[module] = _module_file(self.profile, module)
+        return self._files[module]
+
+    def symbol_defined(self, module: str, name: str) -> bool:
+        relative = self.module_file(module)
+        if relative is None:
+            return True
+        exports = self._exports.get(relative, ...)
+        if exports is ...:
+            tree = self.cache.tree(relative)
+            exports = None if tree is None else _module_exports(tree)
+            self._exports[relative] = exports
+        return exports is not None and name in exports
+
+
+def _module_exports(tree: ast.AST) -> frozenset[str]:
+    names: set[str] = set()
+    for node in getattr(tree, "body", []):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.ImportFrom):
+            names.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+    return frozenset(names)
+
+
+def _authenticity(profile: ProjectProfile, resolver: _Resolver) -> dict:
     root = Path(profile.root)
     declared = _declared(root)
     local = _local_tops(profile)
@@ -190,12 +238,13 @@ def _authenticity(profile: ProjectProfile) -> dict:
     unresolved: list[dict] = []
     for relative in [*profile.source_files, *profile.test_files]:
         path = root / relative
-        if not path.is_file():
-            continue
         if relative.endswith(".py"):
-            found = _python_imports(path, relative, profile, local, declared)
+            found = _python_imports(path, relative, resolver, local, declared)
         elif relative.endswith((".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")):
-            found = _js_imports(path, relative, declared)
+            text = resolver.cache.text(relative)
+            if text is None:
+                continue
+            found = _js_imports(text, relative, declared)
         else:
             continue
         for item in found:
@@ -220,77 +269,44 @@ def _authenticity(profile: ProjectProfile) -> dict:
     }
 
 
-def _python_imports(path: Path, relative: str, profile: ProjectProfile, local: set[str], declared: set[str]) -> list[dict]:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except SyntaxError:
+def _python_imports(path: Path, relative: str, resolver: _Resolver, local: set[str], declared: set[str]) -> list[dict]:
+    tree = resolver.cache.tree(relative)
+    if tree is None:
         return []
     found = []
-    for node in ast.walk(tree):
+    for node in iter_statements(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                found.append(_classify_module(alias.name, None, relative, node.lineno, profile, local, declared))
+                found.append(_classify_module(alias.name, None, relative, node.lineno, resolver, local, declared))
         elif isinstance(node, ast.ImportFrom) and node.module:
             module = node.module
             if node.level:
-                module = _relative_module(path, profile, node.level, node.module)
+                module = _relative_module(path, resolver.profile, node.level, node.module)
             for alias in node.names:
                 if alias.name == "*":
-                    found.append(_classify_module(module, None, relative, node.lineno, profile, local, declared))
+                    found.append(_classify_module(module, None, relative, node.lineno, resolver, local, declared))
                 else:
-                    found.append(_classify_module(module, alias.name, relative, node.lineno, profile, local, declared))
+                    found.append(_classify_module(module, alias.name, relative, node.lineno, resolver, local, declared))
     return found
 
 
-def _classify_module(module: str, name: str | None, file: str, line: int, profile: ProjectProfile, local: set[str], declared: set[str]) -> dict:
+def _classify_module(module: str, name: str | None, file: str, line: int, resolver: _Resolver, local: set[str], declared: set[str]) -> dict:
     top = module.split(".")[0]
     record = {"module": module, "name": name, "file": file, "line": line}
     if top in _STDLIB or _norm(top) in declared:
         record["status"] = "verified"
         return record
     if top in local:
-        if name and _module_file(profile, f"{module}.{name}") is not None:
+        if name and resolver.module_file(f"{module}.{name}") is not None:
             record["status"] = "verified"
             return record
-        if _module_file(profile, module) is None or (name and not _symbol_defined(profile, module, name)):
+        if resolver.module_file(module) is None or (name and not resolver.symbol_defined(module, name)):
             record["status"] = "unresolved"
             return record
         record["status"] = "verified"
         return record
     record["status"] = "phantom"
     return record
-
-
-def _symbol_defined(profile: ProjectProfile, module: str, name: str) -> bool:
-    root = Path(profile.root)
-    relative = _module_file(profile, module)
-    if relative is None:
-        return True
-    path = root / relative
-    if not path.is_file():
-        return False
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except SyntaxError:
-        return False
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.AnnAssign)) and getattr(node, "name", None) == name:
-            return True
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == name:
-                    return True
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                exported = alias.asname or alias.name
-                if exported == name:
-                    return True
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                exported = alias.asname or alias.name.split(".")[0]
-                if exported == name:
-                    return True
-    return False
 
 
 def _module_file(profile: ProjectProfile, module: str) -> str | None:
@@ -318,13 +334,12 @@ def _relative_module(path: Path, profile: ProjectProfile, level: int, module: st
     return ".".join([*keep, module])
 
 
-def _js_imports(path: Path, relative: str, declared: set[str]) -> list[dict]:
-    text = path.read_text(encoding="utf-8", errors="replace")
+def _js_imports(text: str, relative: str, declared: set[str]) -> list[dict]:
     names = re.findall(r"""(?:from|import)\s+["']([^"']+)["']|require\(\s*["']([^"']+)["']\s*\)""", text)
     found = []
     for pair in names:
         spec = next(item for item in pair if item)
-        if spec.startswith("."):
+        if spec.startswith(".") or spec.startswith("@/"):
             found.append({"module": spec, "name": None, "file": relative, "line": 1, "status": "verified"})
             continue
         top = spec.split("/")[0]
@@ -386,19 +401,14 @@ def _declared(root: Path) -> set[str]:
     return found
 
 
-def _firi(profile: ProjectProfile) -> dict:
-    root = Path(profile.root)
+def _firi(profile: ProjectProfile, cache: SourceCache) -> dict:
     tests = 0
     unisolated = []
     for relative in profile.test_files:
         if not relative.endswith(".py"):
             continue
-        path = root / relative
-        if not path.is_file():
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
+        tree = cache.tree(relative)
+        if tree is None:
             continue
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.name.startswith("test_"):

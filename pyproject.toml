@@ -4,23 +4,47 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "recoverage"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Project-agnostic agentic code coverage: measure, score, explain gaps, draft tests."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Recoverage" }]
-dependencies = [
-  "coverage>=7.6",
+keywords = ["coverage", "testing", "static-analysis"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = ["coverage>=7.6"]
+
+[project.urls]
+Homepage = "https://github.com/LITDataScience/recoverage"
+Documentation = "https://github.com/LITDataScience/recoverage/tree/main/docs"
+Changelog = "https://github.com/LITDataScience/recoverage/blob/main/docs/CHANGELOG.md"
+
+[project.optional-dependencies]
+report = [
   "matplotlib>=3.8",
-  "hypothesis>=6.100",
+  "tree-sitter>=0.23",
+  "tree-sitter-python>=0.23",
+  "tree-sitter-javascript>=0.23",
+]
+dev = [
+  "pytest>=8",
+  "matplotlib>=3.8",
   "tree-sitter>=0.23",
   "tree-sitter-python>=0.23",
   "tree-sitter-javascript>=0.23",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
+[tool.setuptools.dynamic]
+version = { attr = "recoverage.version.__version__" }
 
 [project.scripts]
 recoverage = "recoverage.cli:main"
@@ -36,4 +60,5 @@ recoverage = ["py.typed", "RUBRIC.md", "templates/report.typ"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"

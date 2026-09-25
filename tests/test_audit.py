@@ -68,6 +68,18 @@ def test_package_submodule_import_is_not_unresolved(tmp_path):
     assert report["authenticity"]["dar"] == 100.0
 
 
+def test_ts_path_alias_is_not_a_phantom(tmp_path):
+    (tmp_path / "page.tsx").write_text(
+        'import { Button } from "@/components/ui/button"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "package.json").write_text('{"name":"web","dependencies":{}}\n', encoding="utf-8")
+    report = audit_project(discover(tmp_path), [])
+    assert report["authenticity"]["phantoms"] == []
+    assert report["authenticity"]["dar"] == 100.0
+    assert report["authenticity"]["total"] == 1
+
+
 def test_local_import_is_verified(tmp_path):
     (tmp_path / "shop.py").write_text("def subtotal(prices):\n    return 1\n", encoding="utf-8")
     (tmp_path / "test_shop.py").write_text(

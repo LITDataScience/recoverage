@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -25,7 +26,16 @@ SKIP_DIRS = {
     ".tox",
     "recoverage-out",
     "sample-report",
+    ".next",
+    ".turbo",
+    "coverage",
+    "out",
+    "target",
+    "vendor",
 }
+MAX_WALK_FILES = 20_000
+MAX_FILE_BYTES = 1_000_000
+MAX_WALK_BYTES = 200_000_000
 SOURCE_EXT = {
     ".py": "python",
     ".js": "javascript",
@@ -70,7 +80,7 @@ def discover(root: Path) -> ProjectProfile:
     if not root.is_dir():
         raise FileNotFoundError(f"project path is not a directory: {root}")
 
-    files = _walk(root)
+    files, skipped, capped = _walk(root)
     src_layout, import_root, packages = _layout(root)
     test_files: list[str] = []
     source_files: list[str] = []
@@ -86,7 +96,7 @@ def discover(root: Path) -> ProjectProfile:
         source_files.append(relative)
         languages[language] = languages.get(language, 0) + 1
 
-    primary = _primary_language(languages)
+    primary = _primary_language(languages, root)
     runner = _test_runner(root, primary, test_files)
     coverage_tool = _coverage_tool(root, primary)
     entry_points = _entry_points(root, source_files)
@@ -104,36 +114,75 @@ def discover(root: Path) -> ProjectProfile:
         import_root=str(import_root),
         src_layout=src_layout,
         flake_markers=flakes,
+        skipped_projects=skipped,
+        notes=_walk_notes(skipped, capped),
     )
 
 
 _NESTED_MARKERS = ("pyproject.toml", "package.json", "go.mod", "Cargo.toml", "pom.xml")
 
 
-def _walk(root: Path) -> list[Path]:
+def _walk(root: Path) -> tuple[list[Path], list[str], bool]:
+    """Walk without entering skip dirs, dot dirs, or nested projects."""
     found: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(root)
-        if any(part in SKIP_DIRS or part.startswith(".") for part in relative.parts):
-            continue
-        if _inside_nested_project(root, relative):
-            continue
-        if path.stat().st_size > 1_000_000:
-            continue
-        found.append(path)
-    return found
+    skipped: list[str] = []
+    capped = False
+    total_bytes = 0
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        current = Path(dirpath)
+        kept: list[str] = []
+        for name in dirnames:
+            if name in SKIP_DIRS or name.startswith("."):
+                continue
+            child = current / name
+            if _is_nested_project(child):
+                skipped.append(child.relative_to(root).as_posix())
+                continue
+            kept.append(name)
+        dirnames[:] = kept
+        for name in filenames:
+            # Suffix check first: no stat() syscall for assets, binaries, or lockfiles.
+            dot = name.rfind(".")
+            if dot < 0 or name[dot:].lower() not in SOURCE_EXT:
+                continue
+            path = current / name
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            if size > MAX_FILE_BYTES:
+                continue
+            if path.is_symlink() and not _stays_inside(root, path):
+                continue
+            found.append(path)
+            total_bytes += size
+            if len(found) >= MAX_WALK_FILES or total_bytes >= MAX_WALK_BYTES:
+                capped = True
+                break
+        if capped:
+            break
+    return found, skipped, capped
 
 
-def _inside_nested_project(root: Path, relative: Path) -> bool:
-    """A directory with its own manifest is a different project, not this one's source."""
-    current = root
-    for part in relative.parts[:-1]:
-        current = current / part
-        if current != root and any((current / name).is_file() for name in _NESTED_MARKERS):
-            return True
-    return False
+def _is_nested_project(path: Path) -> bool:
+    return any((path / name).is_file() for name in _NESTED_MARKERS)
+
+
+def _walk_notes(skipped: list[str], capped: bool) -> list[str]:
+    notes: list[str] = []
+    if skipped:
+        shown = ", ".join(skipped[:12])
+        extra = f" (+{len(skipped) - 12} more)" if len(skipped) > 12 else ""
+        notes.append(
+            "Skipped nested projects (own manifest, not part of this run): "
+            f"{shown}{extra}. Run recoverage on each directory."
+        )
+    if capped:
+        notes.append(
+            f"Discovery stopped at {MAX_WALK_FILES} source files or {MAX_WALK_BYTES // 1_000_000} MB. "
+            "The report is partial."
+        )
+    return notes
 
 
 def _is_test(path: Path) -> bool:
@@ -157,9 +206,26 @@ def _layout(root: Path) -> tuple[bool, Path, list[str]]:
     return search == src and src.is_dir(), search, packages
 
 
-def _primary_language(languages: dict[str, int]) -> str:
+def _stays_inside(root: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _primary_language(languages: dict[str, int], root: Path) -> str:
     if not languages:
         return "unknown"
+    if (root / "pyproject.toml").is_file() and languages.get("python"):
+        return "python"
+    if (root / "package.json").is_file() and not (root / "pyproject.toml").is_file():
+        javascript = languages.get("javascript", 0)
+        typescript = languages.get("typescript", 0)
+        scripted = javascript + typescript
+        others = max((count for name, count in languages.items() if name not in {"javascript", "typescript"}), default=0)
+        if scripted and scripted >= others:
+            return "typescript" if typescript >= javascript else "javascript"
     ranked = sorted(languages.items(), key=lambda item: (-item[1], item[0]))
     return ranked[0][0]
 

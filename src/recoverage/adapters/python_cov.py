@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
-import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from recoverage.adapters.static import unmeasured
 from recoverage.models import CoverageResult, FileCoverage, FileStructure, ProjectProfile
+from recoverage.proc import child_env, run_tree
 
 
 def run_python(
@@ -17,15 +19,29 @@ def run_python(
     structures: list[FileStructure],
     output_dir: Path,
 ) -> CoverageResult:
+    work = Path(tempfile.mkdtemp(prefix="recoverage-cov-"))
+    try:
+        return _run_python(profile, structures, output_dir, work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _run_python(
+    profile: ProjectProfile,
+    structures: list[FileStructure],
+    output_dir: Path,
+    work: Path,
+) -> CoverageResult:
     root = Path(profile.root)
-    cov_file = output_dir / ".coverage"
-    json_path = output_dir / "coverage.json"
-    env = os.environ.copy()
-    env["COVERAGE_FILE"] = str(cov_file)
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env.pop("RECOVERAGE_LLM_API_KEY", None)
-    import_root = profile.import_root
-    env["PYTHONPATH"] = import_root + os.pathsep + env.get("PYTHONPATH", "")
+    cov_file = work / ".coverage"
+    json_path = work / "coverage.json"
+    env = child_env(
+        {
+            "COVERAGE_FILE": str(cov_file),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": profile.import_root,
+        }
+    )
     source = ",".join(profile.packages) if profile.packages else _fallback_source(profile)
     command = [
         sys.executable,
@@ -38,18 +54,11 @@ def run_python(
         *(_runner_args(profile, output_dir)),
     ]
     try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-        )
+        completed = run_tree(command, cwd=str(root), env=env, timeout=180)
     except subprocess.TimeoutExpired:
         result = unmeasured(profile, structures, notes=["coverage.py timed out after 180s."])
         result.command = command
+        result.tests_exit_code = 124
         return result
     except OSError as exc:
         result = unmeasured(profile, structures, notes=[f"coverage.py failed to start: {exc}"])
@@ -60,11 +69,8 @@ def run_python(
     json_run = subprocess.run(json_cmd, cwd=root, env=env, capture_output=True, text=True, check=False)
     notes = []
     if completed.returncode != 0:
-        tail = (completed.stdout + "\n" + completed.stderr).strip().splitlines()
         notes.append(
-            "Tests exited "
-            f"{completed.returncode}. Coverage data is still used when coverage.py wrote it. "
-            + " ".join(tail[-4:])
+            f"Tests exited {completed.returncode}. Coverage data is still used when coverage.py wrote it."
         )
     if json_run.returncode != 0 or not json_path.is_file():
         detail = (json_run.stderr or json_run.stdout or "coverage json produced no file").strip()
@@ -73,7 +79,9 @@ def run_python(
         result.tests_exit_code = completed.returncode
         return result
 
-    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    raw = json_path.read_text(encoding="utf-8")
+    payload = json.loads(raw)
+    (output_dir / "coverage.json").write_text(raw, encoding="utf-8")
     files = _parse_files(payload, root)
     return _project_totals(
         profile,
@@ -198,9 +206,6 @@ def _tool_branch(totals: dict, branches: int, covered_branches: int) -> float | 
 
 
 def _match(structure_path: str, files: dict[str, FileCoverage]) -> FileCoverage | None:
-    if structure_path in files:
-        return files[structure_path]
-    for key, item in files.items():
-        if structure_path.endswith(key) or key.endswith(structure_path):
-            return item
-    return None
+    from recoverage.mapcov import match_coverage
+
+    return match_coverage(structure_path, files)

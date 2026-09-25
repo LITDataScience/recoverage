@@ -22,12 +22,17 @@ def explain_gate(
     measured: bool,
     line: float | None,
     critical: int,
+    tests_exit_code: int | None = None,
 ) -> str:
     """Say why this gate was chosen. Do not mention a cause that did not happen."""
     if gate == "blocked":
         reasons: list[str] = []
         if not runner:
             reasons.append("there is no test runner")
+        if tests_exit_code not in (None, 0):
+            reasons.append(f"the test run exited {tests_exit_code}")
+        elif measured and tests_exit_code is None:
+            reasons.append("the test run did not report an exit code")
         if measured and line is not None and line < 20:
             reasons.append(f"measured statement coverage is {line:.1f}%, under 20%")
         if score < 40:
@@ -81,12 +86,14 @@ def score_project(
         total = max(0.0, total - 2.0)
     total = round(total, 1)
     critical = sum(1 for gap in gaps if gap.severity == "critical")
+    tests_failed = coverage.tests_exit_code not in (None, 0) or (coverage.measured and coverage.tests_exit_code is None)
     gate = decide_gate(
         total,
         runner=bool(profile.test_runner),
         measured=coverage.measured,
         line=coverage.line_percent,
         critical=critical,
+        tests_exit_code=coverage.tests_exit_code,
     )
     mutation = analytics.get("mutation") or {}
     notes = [
@@ -97,6 +104,7 @@ def score_project(
             measured=coverage.measured,
             line=coverage.line_percent,
             critical=critical,
+            tests_exit_code=coverage.tests_exit_code,
         ),
         mutation.get("note") or "Mutation testing did not run.",
     ]
@@ -112,6 +120,7 @@ def score_project(
         factors=factors,
         mutation_testing_ran=bool(mutation.get("ran")),
         notes=notes,
+        tests_failed=tests_failed,
     )
 
 
@@ -123,8 +132,10 @@ def decide_gate(
     line: float | None,
     critical: int,
     threshold: float = 85,
+    tests_exit_code: int | None = None,
 ) -> str:
-    if not runner or score < 40 or (measured and line is not None and line < 20):
+    tests_failed = tests_exit_code not in (None, 0) or (measured and tests_exit_code is None)
+    if not runner or score < 40 or tests_failed or (measured and line is not None and line < 20):
         return "blocked"
     if not measured:
         return "needs-review"
@@ -140,6 +151,8 @@ def meets_threshold(result: ScoreResult, threshold: str | None) -> bool:
         return True
     from recoverage.models import GATE_RANK, GATES
 
+    if getattr(result, "tests_failed", False):
+        return False
     if threshold in GATES:
         return GATE_RANK[result.gate] >= GATE_RANK[threshold]
     return result.score >= float(threshold)
