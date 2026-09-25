@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "recoverage"
+name = "coderecoverage"
 dynamic = ["version"]
 description = "Project-agnostic agentic code coverage: measure, score, explain gaps, draft tests."
 readme = "README.md"

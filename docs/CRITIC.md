@@ -26,7 +26,7 @@ Already in the tree: `pyproject.toml` (name `recoverage`, version from `version.
 1. **PYPI-01.** Done. `README.md` says the default run is static, lists `--dynamic` and `--deep`, and says a missing Typst binary does not fail the command.
 2. **PYPI-02.** Done. `docs/security.md` matches the current opt-in, allowlist, probe worker, scrub, and LLM cap.
 3. **PYPI-03.** Done. The rubric says temp copy. The README embeds that rubric.
-4. **PYPI-04.** Not done from this tree. Reserve the PyPI project `recoverage`. Add a trusted publisher for this repo, workflow `python-publish.yml`, and the GitHub environment `pypi`. Watch `ci.yml` go green. Publish by cutting a GitHub Release. Do not upload a wheel built on a laptop. Steps are in `docs/pypi.md`.
+4. **PYPI-04.** Not done from this tree. Reserve the PyPI project `coderecoverage` (`recoverage` is taken). Add a trusted publisher for this repo, workflow `python-publish.yml`, and the GitHub environment `pypi`. Watch `ci.yml` go green. Publish by cutting a GitHub Release. Do not upload a wheel built on a laptop. Steps are in `docs/pypi.md`.
 5. **PYPI-05.** Done as the allowed product decision. The first lines of the README say trusted trees, static default, `--dynamic` runs as you, no OS sandbox. There is still no container. Do not describe the package as a scanner for hostile repositories.
 
 PYPI-04 is the remaining upload step. It is an account action, not a code change.
@@ -68,7 +68,7 @@ Status means the state of the fix, not the severity of the bug.
 | PYPI-01 | HIGH | DONE | `README.md` is the long description. It states the static default, `--dynamic`, `--deep`, and that a missing Typst binary does not fail the command. |
 | PYPI-02 | HIGH | DONE | `docs/security.md` matches the opt-in, the env allowlist, out-of-process probes, scrubbing, and the LLM cap. |
 | PYPI-03 | MEDIUM | DONE | The rubric says temp copy, not sandbox. The README embeds that text. |
-| PYPI-04 | HIGH | TODO | Trusted publisher for project `recoverage`, workflow `python-publish.yml`, environment `pypi` has not been created. `ci.yml` has not been observed on GitHub. Tagging is `.github/workflows/release.yml` (Actions → Release). Steps are in `docs/pypi.md`. |
+| PYPI-04 | HIGH | TODO | Trusted publisher for project `coderecoverage` (`recoverage` is taken), workflow `python-publish.yml`, environment `pypi` is pending on PyPI. `ci.yml` has not been observed on GitHub. Tagging is `.github/workflows/release.yml` (Actions → Release). Steps are in `docs/pypi.md`. |
 | PYPI-05 | CRITICAL | DONE | The README opens with trusted trees, static default, `--dynamic` as the user, no OS sandbox. Residual: no container. |
 | SEC-01 | HIGH | DONE | `assure.py` and `mutate.py` used `shutil.copytree` with default `symlinks=False`. A link inside the checkout pointing at `~/.ssh` or `/etc` was dereferenced into the temp copy and then a test suite ran next to it. `.git`, `node_modules`, `.venv` were copied too. `proc.temp_copy` now copies links as links and skips VCS, dependency, and cache directories. |
 | SEC-02 | MEDIUM | DONE | `recoverage-cov-*` and `recoverage-js-cov-*` temp directories were never removed. A `.coverage` SQLite file with absolute paths of the project outlived every run under `%TEMP%`. Both adapters now `rmtree` in `finally`. |

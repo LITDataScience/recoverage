@@ -13,10 +13,10 @@ The design name in the original spec is OmniCov-AI. The package and the CLI are 
 Python 3.11+.
 
 ```bash
-python3 -m pip install recoverage
+python3 -m pip install coderecoverage
 ```
 
-Charts and the Tree-sitter call graph need the extra: `python3 -m pip install "recoverage[report]"`. From a checkout of this repo, `python3 -m pip install -e ".[dev]"` installs the test extra. `python3 -m recoverage` works from that checkout before the first PyPI release exists.
+Charts and the Tree-sitter call graph need the extra: `python3 -m pip install "coderecoverage[report]"`. From a checkout of this repo, `python3 -m pip install -e ".[dev]"` installs the test extra. `python3 -m recoverage` works from that checkout before the first PyPI release exists.
 
 PDF compilation needs the [Typst](https://github.com/typst/typst) CLI on `PATH`. Without it, Markdown and HTML still write and the command continues. A Typst compile error still exits `2`.
 

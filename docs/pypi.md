@@ -8,7 +8,7 @@ Do not upload a wheel built on a laptop. The files on PyPI have to be the artifa
 
 This is not in the repo. Someone with the PyPI account has to do it once.
 
-1. Create the PyPI project `recoverage` (or let the first trusted publish create it, if the account allows that).
+1. The PyPI project is `coderecoverage`. `recoverage` is already taken. The pending publisher has to use that project name. `pip install coderecoverage` installs the `recoverage` module and the `recoverage` command.
 2. On PyPI, add a trusted publisher: owner `LITDataScience`, repository `recoverage`, workflow `python-publish.yml`, environment `pypi`.
 3. On GitHub, create an environment named `pypi`. The workflow's publish job requires that name. `id-token: write` is only on that job.
 

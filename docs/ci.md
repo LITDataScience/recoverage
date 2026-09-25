@@ -4,7 +4,7 @@ Copy `examples/ci/recoverage.yml` to `.github/workflows/recoverage.yml` on a pro
 
 Gate rank is `blocked` < `needs-review` < `merge-ready` < `production-ready`. A named gate is blocked when the project's own tests exit nonzero, so a red suite cannot clear `merge-ready`. A numeric threshold also fails when the test run failed.
 
-The workflow's `pip install recoverage` line is for after this package is published. From a checkout of this repo, install with `pip install -e .` instead.
+The workflow's `pip install coderecoverage` line is for after this package is published. From a checkout of this repo, install with `pip install -e .` instead.
 
 ## Artifacts
 

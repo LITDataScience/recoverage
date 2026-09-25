@@ -3,10 +3,10 @@
 Python 3.11+. Trusted trees only. Default `run` does not execute the checkout. See [security.md](security.md).
 
 ```bash
-python3 -m pip install recoverage
+python3 -m pip install coderecoverage
 ```
 
-`recoverage[report]` adds matplotlib and Tree-sitter. From a checkout, `python3 -m pip install -e ".[dev]"` installs pytest plus that extra. `python3 -m recoverage` works from the checkout before the first release is on PyPI. The publish steps are in [pypi.md](pypi.md).
+`coderecoverage[report]` adds matplotlib and Tree-sitter. The install name is `coderecoverage`. The command and the import stay `recoverage`. From a checkout, `python3 -m pip install -e ".[dev]"` installs pytest plus that extra. `python3 -m recoverage` works from the checkout before the first release is on PyPI. The publish steps are in [pypi.md](pypi.md).
 
 ## Runtime dependencies
 

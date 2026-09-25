@@ -17,5 +17,6 @@ All notable changes are documented here. The format is [Keep a Changelog](https:
 - `examples/sample-report/` no longer embeds the `/agent/recoverage/...` build path.
 - CI runs pytest on Python 3.11, 3.12, and 3.13, with Typst installed, and checks the built wheel and sdist with `twine`. The pylint workflow that targeted 3.8–3.10 is removed.
 - Documentation lives in `docs/`. The root README is the short entry point and still embeds the rubric verbatim.
+- The PyPI distribution name is `coderecoverage`. `recoverage` was already registered. The import and the `recoverage` command are unchanged.
 - Drafted property tests are plain pytest. They no longer import Hypothesis, which a normal install does not have, so the temp-copy filter was deleting every draft.
 - `.github/workflows/release.yml` is the only way to tag. It promotes this file, tags `v` plus `version.py`, and publishes the GitHub Release. `python-publish.yml` refuses a tag that does not match `version.py`, then uploads that commit to PyPI.
