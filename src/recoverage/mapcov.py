@@ -18,8 +18,9 @@ def map_coverage(structures: list[FileStructure], coverage: CoverageResult) -> l
     for structure in structures:
         file_cov = index.match(structure.path)
         lines = index.lines(file_cov) if file_cov is not None else None
+        measured = coverage.measured and _tool_measures(coverage.tool, structure.language)
         for function in structure.functions:
-            mapped.append(_map_function(function, file_cov, coverage.measured, lines))
+            mapped.append(_map_function(function, file_cov, measured, lines))
     return mapped
 
 
@@ -29,7 +30,17 @@ def module_stats(structures: list[FileStructure], coverage: CoverageResult) -> l
     for structure in structures:
         if structure.functions == [] and structure.statement_count == 0:
             continue
-        match = index.match(structure.path) if coverage.measured else None
+        match = index.match(structure.path) if coverage.measured and _tool_measures(coverage.tool, structure.language) else None
+        if not _tool_measures(coverage.tool, structure.language):
+            stats.append(
+                ModuleStat(
+                    name=structure.module or structure.path,
+                    line_percent=None,
+                    statements=structure.statement_count,
+                    covered=0,
+                )
+            )
+            continue
         if match is None:
             stats.append(
                 ModuleStat(
@@ -50,6 +61,15 @@ def module_stats(structures: list[FileStructure], coverage: CoverageResult) -> l
             )
         )
     return stats
+
+
+def _tool_measures(tool: str, language: str) -> bool:
+    """coverage.py does not measure JavaScript. c8 does not measure Python."""
+    if tool == "coverage.py":
+        return language == "python"
+    if tool in {"c8", "istanbul"}:
+        return language in {"javascript", "typescript"}
+    return True
 
 
 def hotspots(functions: list[MappedFunction], limit: int = 8) -> list[Hotspot]:

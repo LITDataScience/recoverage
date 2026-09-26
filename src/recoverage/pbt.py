@@ -45,6 +45,7 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
         per = trials
     passed = 0
     failed = 0
+    left_out = 0
     falsified: list[dict] = []
     properties: list[dict] = []
     session = ProbeSession(profile)
@@ -67,14 +68,18 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
             rng = random.Random(function.spec.qualname)
             local_pass = 0
             local_fail = 0
+            errors = 0
             kinds = ("structural", "determinism", "entity-substitution")
             for index in range(per):
                 kind = kinds[index % 3]
                 args = _sample(function, rng, kind)
-                ok, shrunk = _check(target, args, kind, function)
-                if ok is None:
+                status, shrunk = _outcome(target, args, kind, function)
+                if status == "skip":
                     continue
-                if ok:
+                if status == "error":
+                    errors += 1
+                    continue
+                if status == "pass":
                     passed += 1
                     local_pass += 1
                 else:
@@ -88,6 +93,23 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
                                 "args": _jsonable(shrunk),
                             }
                         )
+            # A function that raises on every call was not property-tested.
+            if local_pass == 0 and local_fail == 0:
+                if errors:
+                    left_out += 1
+                properties.append(
+                    {
+                        "symbol": function.spec.qualname,
+                        "module": module,
+                        "file": function.spec.file,
+                        "parameters": function.spec.parameters,
+                        "trials": 0,
+                        "passed": 0,
+                        "failed": 0,
+                        "kinds": list(kinds),
+                    }
+                )
+                continue
             properties.append(
                 {
                     "symbol": function.spec.qualname,
@@ -103,26 +125,30 @@ def run_properties(profile: ProjectProfile, functions: list[MappedFunction], *, 
     finally:
         session.close()
     total = passed + failed
+    note = (
+        f"Ran {total} property trials across structural conformance, determinism, "
+        "and entity substitution. Failing inputs were shrunk toward simpler values."
+    )
+    if left_out:
+        note += f" {left_out} functions raised on every call and were left out of the score."
     return {
-        "ran": True,
+        "ran": total > 0,
         "trials": total,
         "passed": passed,
         "failed": failed,
         "falsified": falsified,
         "properties": properties,
-        "note": (
-            f"Ran {total} property trials across structural conformance, determinism, "
-            "and entity substitution. Failing inputs were shrunk toward simpler values."
-        ),
+        "note": note,
     }
 
 
 def _targets(profile: ProjectProfile, functions: list[MappedFunction], limit: int = 4) -> list[MappedFunction]:
-    """Stops at `limit`; the banned-token scan is done once per file, not once per function."""
+    """Prefer covered functions in the project packages. Stops at `limit`."""
     root = Path(profile.root)
     banned_by_file: dict[str, bool] = {}
     chosen = []
-    for function in functions:
+    ordered = sorted(functions, key=lambda function: _probe_sort_key(function, profile.packages))
+    for function in ordered:
         if not function.spec.is_public or function.spec.is_method or not function.spec.file.endswith(".py"):
             continue
         relative = function.spec.file
@@ -142,29 +168,36 @@ def _targets(profile: ProjectProfile, functions: list[MappedFunction], limit: in
     return chosen
 
 
-def _check(target, args: tuple, kind: str, function: MappedFunction) -> tuple[bool, tuple]:
+def _probe_sort_key(function: MappedFunction, packages: list[str]) -> tuple:
+    path = function.spec.file.replace("\\", "/")
+    in_package = any(path == f"{name}.py" or path.startswith(f"{name}/") for name in packages)
+    covered = function.coverage_ratio or 0.0
+    return (0 if in_package else 1, 0 if covered > 0 else 1, -covered, path, function.spec.qualname)
+
+
+def _outcome(target, args: tuple, kind: str, function: MappedFunction) -> tuple[str, tuple]:
     try:
         first = target(*args)
         second = target(*args) if kind == "determinism" else first
     except (TypeError, ValueError, KeyError, OverflowError):
-        return None, args
+        return "skip", args
     except Exception:
-        return False, _shrink(target, args, kind, function)
+        return "error", args
     if kind == "determinism" and first != second:
-        return False, _shrink(target, args, kind, function)
+        return "fail", _shrink(target, args, kind, function)
     if kind == "structural" and not _shape_ok(first, function):
-        return False, _shrink(target, args, kind, function)
+        return "fail", _shrink(target, args, kind, function)
     if kind == "entity-substitution":
         swapped = _swap_strings(args)
         try:
             other = target(*swapped)
         except (TypeError, ValueError, KeyError, OverflowError):
-            return None, args
+            return "skip", args
         except Exception:
-            return False, _shrink(target, swapped, kind, function)
+            return "error", args
         if type(other) is not type(first):
-            return False, _shrink(target, args, kind, function)
-    return True, args
+            return "fail", _shrink(target, args, kind, function)
+    return "pass", args
 
 
 def _shape_ok(value, function: MappedFunction) -> bool:

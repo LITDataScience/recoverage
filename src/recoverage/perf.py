@@ -65,7 +65,9 @@ def time_functions(profile: ProjectProfile, functions: list[MappedFunction], rep
         function
         for function in functions
         if function.spec.is_public and not function.spec.is_method and function.spec.parameters and function.spec.file.endswith(".py")
-    ][:3]
+    ]
+    usable.sort(key=lambda function: _timing_key(function, profile.packages))
+    usable = usable[:3]
     if not usable:
         return {"ran": False, "regression": False, "p_value": None, "note": "No parameterized public functions to time."}
     regressions = []
@@ -160,6 +162,13 @@ def _args(function: MappedFunction, mode: str) -> tuple:
         else:
             values.append("x" if heavy else "a")
     return tuple(values)
+
+
+def _timing_key(function: MappedFunction, packages: list[str]) -> tuple:
+    path = function.spec.file.replace("\\", "/")
+    in_package = any(path == f"{name}.py" or path.startswith(f"{name}/") for name in packages)
+    covered = function.coverage_ratio or 0.0
+    return (0 if in_package else 1, 0 if covered > 0 else 1, -covered, path, function.spec.qualname)
 
 
 def _work_ratio(function: MappedFunction) -> float:

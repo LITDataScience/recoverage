@@ -39,7 +39,7 @@ flowchart LR
 | `graph.py` | Tree-sitter entities, call edges resolved through a suffix index, PageRank with convergence stop, Louvain. `CodeGraph` carries symbol and adjacency indexes for O(deg) queries. |
 | `entropy.py` | Lexical ΔH over spec tokens vs test tokens. |
 | `blast.py` | Union coverage of a 2-hop call-graph radius. |
-| `pbt.py` | Property trials through `probe_worker`. |
+| `pbt.py` | Property trials through `probe_worker`. Covered functions in the project packages are chosen first. A function that raises on every call is left out of the score. |
 | `sbst.py` | Search for arguments through `probe_worker`. Feeds drafts. |
 | `proc.py` | Child env allowlist, process-tree kill, `temp_copy` (symlinks kept as links, VCS and dependency dirs skipped). |
 | `mutate.py` | Operator flip on a temp copy. Up to 5 functions. |
@@ -71,7 +71,7 @@ Python coverage tool is always reported as `coverage.py`. JS coverage tool is `c
 
 ## Coverage
 
-Python: `coverage run --branch --source=<packages>`, then pytest (or `unittest discover`). Timeout 180s. Pytest `addopts` are cleared and `-p no:cov` is set, because a project `--cov` flag under `coverage run` makes pytest exit 4 when pytest-cov is not installed. Unimported Python modules are counted as uncovered in the project percentage, and the raw tool percentage is printed beside it. With `--branch`, coverage.py's `percent_covered` blends arcs into statements, so the score uses statement coverage (`covered_lines / num_statements`), not that headline.
+Python: `coverage run --branch --source=<packages>`, then pytest (or `unittest discover`). Timeout 180s. Pytest `addopts` are cleared and `-p no:cov` is set, because a project `--cov` flag under `coverage run` makes pytest exit 4 when pytest-cov is not installed. Unimported Python modules are counted as uncovered in the project percentage, and the raw tool percentage is printed beside it. JavaScript files stay unmeasured in that run; they are not given a coverage of 0. With `--branch`, coverage.py's `percent_covered` blends arcs into statements, so the score uses statement coverage (`covered_lines / num_statements`), not that headline.
 
 A nonzero pytest exit still returns `measured=True` when `coverage.json` was written, except exit 4. Exit 4 means pytest never ran the suite: either it rejected the command, or it could not import `conftest.py` because this interpreter does not have the project's dependencies. Coverage stays unmeasured and the note names the missing module. The gate then blocks. See [scoring.md](scoring.md). Test stdout and stderr tails are not stored. Run `recoverage` with the project's own Python when that environment is not the one Recoverage is installed in.
 
