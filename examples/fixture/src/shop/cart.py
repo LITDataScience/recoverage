@@ -1,4 +1,4 @@
-"""Cart totals and coupons. Several branches are left untested by tests/test_cart.py."""
+"""Cart totals and coupons."""
 
 from __future__ import annotations
 

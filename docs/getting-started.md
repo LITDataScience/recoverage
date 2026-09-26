@@ -27,14 +27,14 @@ Recoverage does not use a GPU. NVIDIA, AMD, and Apple GPUs are compatible becaus
 
 ## Try the fixture
 
-`examples/fixture` is a small `shop` package. `tests/test_cart.py` covers one happy path. Payments and pricing are untested. `examples/sample-report/` is a checked-in run of that fixture. A `0.1.0` `analysis.json` does not reload on `0.2.0`; regenerate it with the command below.
+`examples/fixture` is a small `shop` package. Its tests cover cart branches, payments, and tier pricing. `examples/sample-report/` is a checked-in `--dynamic` run of that fixture (MRS 60, gate `needs-review`, statement coverage 100%). A `0.1.0` `analysis.json` does not reload on `0.2.0`.
 
 ```bash
 python3 -m recoverage run examples/fixture --output examples/sample-report --dynamic --no-llm
 python3 -m recoverage show examples/sample-report --no-open
 ```
 
-The checked-in sample is that dynamic run: measured statement coverage, gate `blocked`. Omit `--dynamic` for a static run whose coverage is `not measured`.
+The checked-in sample is that dynamic run: statement coverage 100%, gate `needs-review`, MRS 60. Deep probes were not requested, so the score stays under the merge bar. Omit `--dynamic` for a static run whose coverage is `not measured`.
 
 `show` serves the `report.html` that `run` already wrote. It does not analyze again. Open `examples/sample-report/report.html` directly if you do not want a local server. `--no-open` skips the browser.
 

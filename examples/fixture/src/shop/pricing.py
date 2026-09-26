@@ -1,4 +1,4 @@
-"""Tier pricing. Unimported by the fixture tests."""
+"""Tier pricing."""
 
 from __future__ import annotations
 

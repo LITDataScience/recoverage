@@ -21,6 +21,17 @@ def _copy(tmp_path: Path) -> Path:
     return project
 
 
+def _weaken(project: Path) -> None:
+    """The published fixture is covered. These tests still need the old gap."""
+    for extra in (project / "tests").glob("test_*.py"):
+        if extra.name != "test_cart.py":
+            extra.unlink()
+    (project / "tests" / "test_cart.py").write_text(
+        "from shop.cart import subtotal\n\n\ndef test_subtotal_sums_prices():\n    assert subtotal([1.0, 2.5, 3.0]) == 6.5\n",
+        encoding="utf-8",
+    )
+
+
 def test_readme_publishes_rubric():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert RUBRIC_MD.strip() in readme
@@ -30,6 +41,7 @@ def test_readme_publishes_rubric():
 
 def test_run_fixture_writes_real_report(tmp_path: Path):
     project = _copy(tmp_path)
+    _weaken(project)
     original = (project / "tests" / "test_cart.py").read_text(encoding="utf-8")
     output = tmp_path / "out"
     analysis, code = execute_run(project, output, llm_mode="off", dynamic=True, deep=True)
@@ -81,6 +93,7 @@ def test_run_fixture_writes_real_report(tmp_path: Path):
 
 def test_generate_drafts_are_real_and_safe(tmp_path: Path):
     project = _copy(tmp_path)
+    _weaken(project)
     output = tmp_path / "out"
     assert main(["generate", str(project), "--output", str(output), "--no-llm", "--dry-run"]) == 0
     assert list(project.glob("tests/*recoverage*")) == []

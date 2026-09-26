@@ -1,4 +1,4 @@
-"""Payment capture and refunds. No test in the fixture imports this module."""
+"""Payment capture and refunds."""
 
 from __future__ import annotations
 

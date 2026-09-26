@@ -18,7 +18,7 @@ No GPU is required or used. NVIDIA, AMD, and Mac GPUs do not change the run. The
 The PyPI project is `coderecoverage`. The command and the import are `recoverage`. `0.1.0` is the release on PyPI. This checkout is `0.2.0`.
 
 <p align="center">
-  <img src="docs/assets/dashboard.png" alt="Recoverage dashboard for the shop fixture: score 7.5, gate blocked, statement coverage 16.7%" width="880">
+  <img src="docs/assets/dashboard.png" alt="Recoverage dashboard for the shop fixture: score 60.0, gate needs-review, statement coverage 100%" width="880">
 </p>
 
 Open the same page locally with `recoverage show examples/sample-report`. The published guide is `recoverage docs`.
@@ -31,7 +31,7 @@ PDF compilation needs the [Typst](https://github.com/typst/typst) CLI on `PATH`.
 
 ## Try the fixture
 
-`examples/fixture` is a small shop package. One test covers the cart. Payments and pricing are not covered. The checked-in sample is a `--dynamic` run: **MRS 7.5**, gate `blocked`, statement coverage **16.7%**.
+`examples/fixture` is a small shop package. The checked-in sample is a `--dynamic` run: **MRS 60.0**, gate `needs-review`, statement coverage **100%**. The score stays under the merge bar because property, mutation, and timing probes were not requested.
 
 ```bash
 python3 -m recoverage run examples/fixture --output examples/sample-report --dynamic --no-llm

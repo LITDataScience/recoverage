@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -144,7 +145,11 @@ def _find_typst() -> str:
     found = shutil.which("typst")
     if found:
         return found
-    candidate = Path.home() / ".local" / "bin" / "typst"
-    if candidate.is_file():
-        return str(candidate)
+    candidates = [Path.home() / ".local" / "bin" / "typst"]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates.append(Path(local) / "Microsoft" / "WinGet" / "Links" / "typst.exe")
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
     raise TypstMissing("typst CLI is not on PATH. Install it from https://github.com/typst/typst/releases.")
