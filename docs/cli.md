@@ -5,6 +5,7 @@ recoverage run [path] [--output DIR] [--dynamic] [--deep] [--threshold GATE|SCOR
 recoverage report [path] [--output DIR] [--input analysis.json] [--dynamic] [--deep] [--threshold GATE|SCORE] [--llm | --no-llm]
 recoverage generate [path] [--output DIR] [--dry-run] [--dynamic] [--deep] [--llm | --no-llm]
 recoverage show [path] [--output DIR] [--port N] [--no-open]
+recoverage docs [--offline]
 ```
 
 `path` defaults to the current directory. `--output` defaults to `<project>/recoverage-out`.
@@ -13,11 +14,13 @@ recoverage show [path] [--output DIR] [--port N] [--no-open]
 
 `run` discovers the project and writes the reports in [reports.md](reports.md). Without `--dynamic` it does not import the project or start a test runner. `--dynamic` runs the tests and prints that there is no OS sandbox. `--deep` implies `--dynamic` and also runs property, mutation, timing, and search probes out of process.
 
-`report` re-renders Markdown, HTML, and PDF from `analysis.json` when that file is already in the output directory, or from `--input`. If the file is missing, `report` analyzes first. Re-rendering does not re-check that the JSON matches the current schema.
+`report` re-renders Markdown, HTML, and PDF from `analysis.json` when that file is already in the output directory, or from `--input`. If the file is missing, `report` analyzes first. A loaded file must match `recoverage.version`, must contain the analysis keys, and must be at most 100 MB. An older file, including a 0.1.0 `analysis.json`, exits 2.
 
 `generate` writes new test files. It does not delete anything and it does not overwrite an existing file; a numeric suffix is used instead. `--dry-run` writes nothing in the project and leaves `generation-preview.md` plus `generation-manifest.json` in the output directory. See [test-generation.md](test-generation.md).
 
-`show` looks for `report.html` at the path you pass, then `<path>/recoverage-out/report.html`. `--output` points at a report directory that is neither of those. `--port 0` picks a free port. If the file is missing, `show` exits `2` and does not run an analysis. The server binds to `127.0.0.1` and serves only `/` and `/report.html`.
+`show` looks for `report.html` at the path you pass, then `<path>/recoverage-out/report.html`. `--output` points at a report directory that is neither of those. `--port 0` picks a free port. If the file is missing, `show` exits `2` and does not run an analysis. The server binds to `127.0.0.1` and serves `/`, `/report.html`, and `charts/*.svg`.
+
+`docs` opens https://litdatascience.github.io/recoverage/. `--offline` prints the `docs/` directory of a git checkout and exits 2 when that directory is not next to the installed package.
 
 ## Exit codes
 

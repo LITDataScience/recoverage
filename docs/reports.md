@@ -4,15 +4,15 @@
 
 | File | What it is |
 | --- | --- |
-| `report.md` | Score, gate sentence, coverage, findings, suggestions, charts as PNG links, rubric. |
-| `report.html` | Same coverage, factors, findings, and suggestions in one file. Inline CSS. Charts are `data:image/png;base64` URIs. No external stylesheet or script. Opens with no server. |
-| `report.pdf` | Typst render of `mrs.json`. Vector bars, not a screenshot of the HTML. |
+| `report.html` | One-file dashboard. Inline SVG charts, filters, a theme toggle, and a file table. A Content-Security-Policy allows only the hashes of its own style and script. No stylesheet link, no script source, no network. The page still reads with JavaScript disabled. |
+| `report.md` | The same sections: overview, coverage, factors, findings grouped by severity, files, suggestions, rubric. Charts are SVG links. |
+| `report.pdf` | Typst render of `mrs.json`. Cover, contents, files (capped), findings. Not a screenshot of the HTML. |
 | `report.typ` | Copy of the package template, next to `mrs.json`, because `typst compile` runs in the output directory. |
-| `charts/*.png` | `coverage_by_package`, `risk_hotspots`, `gap_severity`. Matplotlib. Used by the Markdown. |
-| `analysis.json` | Full analysis. `report` and `generate` will load it back with no schema check. |
-| `coverage.json` | coverage.py output, when the Python adapter got that far. JS writes `js-coverage/` instead. |
-| `mrs.json` | Numbers the PDF template reads, including the gate sentence and suggestion lines. |
-| `.coverage` | coverage.py's data file, in the output directory via `COVERAGE_FILE`. Not cleared before the next run. |
+| `charts/*.svg` | `score_gauge`, `coverage_by_package`, `risk_hotspots`, `gap_severity`. Drawn by Recoverage. No matplotlib. |
+| `charts/*.png` | The same three bar charts, only when matplotlib is installed (`coderecoverage[report]` or `[dev]`). Markdown prefers the SVG. |
+| `analysis.json` | Full analysis. `report` and `generate` load it only when `version` equals this package, the required keys are present, and the file is at most 100 MB. A 0.1.0 file does not load on 0.2.0. |
+| `coverage.json` | coverage.py JSON, copied into the output directory when the Python adapter measured a run. The SQLite `.coverage` file stays in a temp directory that is removed when the run finishes. JS writes `js-coverage/` in that same kind of temp directory. |
+| `mrs.json` | Numbers the PDF template reads: gate sentence, files, findings, suggestions. |
 | `generation-preview.md` | Only after `generate`. Draft source in fences. |
 | `generation-manifest.json` | Only after `generate`. `dry_run` and the paths that were planned or written. |
 
@@ -33,13 +33,13 @@ The file is scrubbed before write and written compact (no indentation; `python -
 
 ## Rendering
 
-HTML escapes gap text, factor details, and suggestions. Markdown escapes gap title, why, and suggestion so they do not become links or images. Do not host a report from a tree you do not trust.
+HTML escapes gap text, factor details, and suggestions, and embeds the interactive data as JSON with `<` escaped. The script builds nodes with `textContent`. Markdown escapes gap title, why, and suggestion so they do not become links or images. Do not host a report from a tree you do not trust.
 
-The PDF view is a reduced projection: score, factors, module percents, severity counts, PBT rows, one-line notes, audit scorecard, suggestions, rubric. It does not embed SBST arguments.
+The PDF view is the same projection as the dashboard, shortened: cover, factors, module bars, severity counts, up to 60 files, findings, PBT rows, one-line notes, the audit scorecard, suggestions, and the rubric. It does not embed SBST arguments.
 
 ## `show`
 
-`serve_html` binds `127.0.0.1` and serves the HTML bytes it read at startup. Any local process that can connect to that port can read the report. The server runs until Ctrl-C. Reports include project metadata; treat the port as private to the user who started it.
+`serve_html` binds `127.0.0.1` and serves the HTML bytes and `charts/*.svg` it read at startup. Any other path is 404. Any local process that can connect to that port can read the report. The server runs until Ctrl-C. Reports include project metadata; treat the port as private to the user who started it.
 
 ## Retention
 

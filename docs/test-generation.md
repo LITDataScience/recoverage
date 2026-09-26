@@ -5,7 +5,7 @@
 Two files per module that produced data:
 
 - `tests/test_<module>_recoverage.py` — one test per SBST case that did not raise. The call uses `repr` of the arguments that search kept. The assertion checks the annotated type, or a generic structured type when there is no annotation.
-- `tests/test_<module>_recoverage_pbt.py` — a Hypothesis test (`max_examples=25`, `database=None`, `deadline=None`) for structural conformance and determinism. `TypeError`, `ValueError`, `KeyError`, and `OverflowError` are ignored.
+- `tests/test_<module>_recoverage_pbt.py` — plain pytest over a fixed `_CASES` list (four samples, or one empty call). Each sample is called twice and the results must match, and the return value must be a structured type. `TypeError`, `ValueError`, `KeyError`, and `OverflowError` are skipped. The file does not import Hypothesis.
 
 JavaScript projects are not given jest/vitest drafts. Rendering is Python only.
 

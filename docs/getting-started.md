@@ -6,11 +6,11 @@ Python 3.11+. Trusted trees only. Default `run` does not execute the checkout. S
 python3 -m pip install coderecoverage
 ```
 
-`coderecoverage[report]` adds matplotlib and Tree-sitter. The install name is `coderecoverage`. The command and the import stay `recoverage`. From a checkout, `python3 -m pip install -e ".[dev]"` installs pytest plus that extra. `python3 -m recoverage` works from the checkout before the first release is on PyPI. The publish steps are in [pypi.md](pypi.md).
+The dashboard and its SVG charts need no extra. `coderecoverage[report]` adds matplotlib PNG charts and the Tree-sitter call graph. `coderecoverage[docs]` builds this site. The install name is `coderecoverage`. The command and the import stay `recoverage`. From a checkout, `python3 -m pip install -e ".[dev]"` installs pytest plus the report extra. The publish steps are in [pypi.md](pypi.md).
 
 ## Runtime dependencies
 
-A normal install requires `coverage`. Charts and the call-graph parser are the `report` extra:
+A normal install requires `coverage`. SVG charts are always drawn. PNG charts and the call-graph parser are the `report` extra:
 
 - `matplotlib`
 - `tree-sitter`
@@ -21,14 +21,20 @@ PDF compilation needs the [Typst](https://github.com/typst/typst) CLI (`typst`) 
 
 JavaScript measurement shells out to a local `c8` or `nyc` via `npx --no-install`. Recoverage does not install npm packages.
 
+## GPUs
+
+Recoverage does not use a GPU. NVIDIA, AMD, and Apple GPUs are compatible because they are ignored: parsing, coverage, and probes run on the CPU. CUDA, ROCm, and Metal are not imported and not detected. Apple Silicon needs a normal Python 3.11+ install. A discrete GPU does not make a run faster.
+
 ## Try the fixture
 
-`examples/fixture` is a small `shop` package. `tests/test_cart.py` covers one happy path. Payments and pricing are untested. `examples/sample-report/` is a checked-in run of that fixture (MRS 32.5, gate `blocked`, statement coverage 16.7%). Paths in that sample are project-relative.
+`examples/fixture` is a small `shop` package. `tests/test_cart.py` covers one happy path. Payments and pricing are untested. `examples/sample-report/` is a checked-in run of that fixture. A `0.1.0` `analysis.json` does not reload on `0.2.0`; regenerate it with the command below.
 
 ```bash
-python3 -m recoverage run examples/fixture --output examples/sample-report
-python3 -m recoverage show examples/sample-report
+python3 -m recoverage run examples/fixture --output examples/sample-report --dynamic --no-llm
+python3 -m recoverage show examples/sample-report --no-open
 ```
+
+The checked-in sample is that dynamic run: measured statement coverage, gate `blocked`. Omit `--dynamic` for a static run whose coverage is `not measured`.
 
 `show` serves the `report.html` that `run` already wrote. It does not analyze again. Open `examples/sample-report/report.html` directly if you do not want a local server. `--no-open` skips the browser.
 

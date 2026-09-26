@@ -69,17 +69,31 @@ _GENERIC_FUNC = re.compile(
 )
 
 
-def analyze_project(profile: ProjectProfile, cache: SourceCache | None = None) -> list[FileStructure]:
+def analyze_project(
+    profile: ProjectProfile,
+    cache: SourceCache | None = None,
+    *,
+    workers: int = 1,
+) -> list[FileStructure]:
     root = Path(profile.root)
     cache = cache or SourceCache(root)
-    structures: list[FileStructure] = []
+    jobs: list[tuple[str, str, str]] = []
     for relative in profile.source_files:
-        language = _language_for(root / relative)
         text = cache.text(relative)
         if text is None:
             continue
-        structures.append(_analyze_file(relative, language, text, profile.src_layout, cache))
-    return structures
+        jobs.append((relative, _language_for(root / relative), text))
+    if workers <= 1 or len(jobs) <= 1:
+        return [_analyze_file(relative, language, text, profile.src_layout, cache) for relative, language, text in jobs]
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _one(job: tuple[str, str, str]) -> FileStructure:
+        relative, language, text = job
+        # Parse from the text. The cache is not safe to mutate from these threads.
+        return _analyze_file(relative, language, text, profile.src_layout, None)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_one, jobs))
 
 
 def _language_for(path: Path) -> str:

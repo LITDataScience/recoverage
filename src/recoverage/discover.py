@@ -75,12 +75,20 @@ ENTRY_FILENAMES = {
 }
 
 
-def discover(root: Path) -> ProjectProfile:
+def discover(root: Path, budget=None) -> ProjectProfile:
     root = root.resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"project path is not a directory: {root}")
 
-    files, skipped, capped = _walk(root)
+    from recoverage.host import HostBudget
+
+    budget = budget or HostBudget.detect()
+    files, skipped, capped = _walk(
+        root,
+        walk_files=budget.walk_files,
+        walk_bytes=budget.walk_bytes,
+        file_bytes=budget.file_bytes,
+    )
     src_layout, import_root, packages = _layout(root)
     test_files: list[str] = []
     source_files: list[str] = []
@@ -115,14 +123,20 @@ def discover(root: Path) -> ProjectProfile:
         src_layout=src_layout,
         flake_markers=flakes,
         skipped_projects=skipped,
-        notes=_walk_notes(skipped, capped),
+        notes=_walk_notes(skipped, capped, walk_files=budget.walk_files, walk_bytes=budget.walk_bytes),
     )
 
 
 _NESTED_MARKERS = ("pyproject.toml", "package.json", "go.mod", "Cargo.toml", "pom.xml")
 
 
-def _walk(root: Path) -> tuple[list[Path], list[str], bool]:
+def _walk(
+    root: Path,
+    *,
+    walk_files: int = MAX_WALK_FILES,
+    walk_bytes: int = MAX_WALK_BYTES,
+    file_bytes: int = MAX_FILE_BYTES,
+) -> tuple[list[Path], list[str], bool]:
     """Walk without entering skip dirs, dot dirs, or nested projects."""
     found: list[Path] = []
     skipped: list[str] = []
@@ -150,13 +164,13 @@ def _walk(root: Path) -> tuple[list[Path], list[str], bool]:
                 size = path.stat().st_size
             except OSError:
                 continue
-            if size > MAX_FILE_BYTES:
+            if size > file_bytes:
                 continue
             if path.is_symlink() and not _stays_inside(root, path):
                 continue
             found.append(path)
             total_bytes += size
-            if len(found) >= MAX_WALK_FILES or total_bytes >= MAX_WALK_BYTES:
+            if len(found) >= walk_files or total_bytes >= walk_bytes:
                 capped = True
                 break
         if capped:
@@ -168,7 +182,13 @@ def _is_nested_project(path: Path) -> bool:
     return any((path / name).is_file() for name in _NESTED_MARKERS)
 
 
-def _walk_notes(skipped: list[str], capped: bool) -> list[str]:
+def _walk_notes(
+    skipped: list[str],
+    capped: bool,
+    *,
+    walk_files: int = MAX_WALK_FILES,
+    walk_bytes: int = MAX_WALK_BYTES,
+) -> list[str]:
     notes: list[str] = []
     if skipped:
         shown = ", ".join(skipped[:12])
@@ -179,7 +199,7 @@ def _walk_notes(skipped: list[str], capped: bool) -> list[str]:
         )
     if capped:
         notes.append(
-            f"Discovery stopped at {MAX_WALK_FILES} source files or {MAX_WALK_BYTES // 1_000_000} MB. "
+            f"Discovery stopped at {walk_files} source files or {walk_bytes // 1_000_000} MB. "
             "The report is partial."
         )
     return notes

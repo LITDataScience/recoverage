@@ -21,7 +21,12 @@ def run_mutants(profile: ProjectProfile, functions: list[MappedFunction], *, lim
     chosen = (covered + uncovered)[:limit]
     if not chosen:
         return {"ran": False, "killed": 0, "total": 0, "mutants": [], "note": "No functions to mutate."}
-    parent, sandbox = temp_copy(root, prefix="recoverage-mutants-")
+    from recoverage.host import TempSpaceError
+
+    try:
+        parent, sandbox = temp_copy(root, prefix="recoverage-mutants-")
+    except TempSpaceError as exc:
+        return {"ran": False, "killed": 0, "total": 0, "mutants": [], "note": str(exc)}
     mutants = []
     unviable = 0
     try:

@@ -18,10 +18,12 @@ def run_javascript(
     profile: ProjectProfile,
     structures: list[FileStructure],
     output_dir: Path,
+    *,
+    timeout: int = 180,
 ) -> CoverageResult:
     report_dir = Path(tempfile.mkdtemp(prefix="recoverage-js-cov-"))
     try:
-        return _run_javascript(profile, structures, report_dir)
+        return _run_javascript(profile, structures, report_dir, timeout=timeout)
     finally:
         shutil.rmtree(report_dir, ignore_errors=True)
 
@@ -30,6 +32,8 @@ def _run_javascript(
     profile: ProjectProfile,
     structures: list[FileStructure],
     report_dir: Path,
+    *,
+    timeout: int = 180,
 ) -> CoverageResult:
     tool = profile.coverage_tool or ""
     test_cmd = _test_command(profile)
@@ -40,9 +44,9 @@ def _run_javascript(
     else:
         return unmeasured(profile, structures, notes=[f"Unsupported JS coverage tool: {tool}"])
     try:
-        completed = run_tree(command, cwd=str(profile.root), env=child_env(), timeout=180)
+        completed = run_tree(command, cwd=str(profile.root), env=child_env(), timeout=timeout)
     except subprocess.TimeoutExpired:
-        result = unmeasured(profile, structures, notes=[f"{tool} timed out after 180s."], tool=tool)
+        result = unmeasured(profile, structures, notes=[f"{tool} timed out after {timeout}s."], tool=tool)
         result.command = command
         result.tests_exit_code = 124
         return result

@@ -18,10 +18,18 @@ def run_python(
     profile: ProjectProfile,
     structures: list[FileStructure],
     output_dir: Path,
+    *,
+    timeout: int = 180,
 ) -> CoverageResult:
+    from recoverage.host import TempSpaceError, assert_temp_space
+
+    try:
+        assert_temp_space()
+    except TempSpaceError as exc:
+        return unmeasured(profile, structures, notes=[str(exc)])
     work = Path(tempfile.mkdtemp(prefix="recoverage-cov-"))
     try:
-        return _run_python(profile, structures, output_dir, work)
+        return _run_python(profile, structures, output_dir, work, timeout=timeout)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -31,6 +39,8 @@ def _run_python(
     structures: list[FileStructure],
     output_dir: Path,
     work: Path,
+    *,
+    timeout: int = 180,
 ) -> CoverageResult:
     root = Path(profile.root)
     cov_file = work / ".coverage"
@@ -54,9 +64,9 @@ def _run_python(
         *(_runner_args(profile, output_dir)),
     ]
     try:
-        completed = run_tree(command, cwd=str(root), env=env, timeout=180)
+        completed = run_tree(command, cwd=str(root), env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
-        result = unmeasured(profile, structures, notes=["coverage.py timed out after 180s."])
+        result = unmeasured(profile, structures, notes=[f"coverage.py timed out after {timeout}s."])
         result.command = command
         result.tests_exit_code = 124
         return result

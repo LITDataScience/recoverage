@@ -1,0 +1,63 @@
+site_name: Recoverage
+site_url: https://litdatascience.github.io/recoverage/
+repo_url: https://github.com/LITDataScience/recoverage
+repo_name: LITDataScience/recoverage
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - Start:
+      - Getting started: getting-started.md
+      - CLI: cli.md
+      - Publishing: pypi.md
+  - How it works:
+      - Pipeline: pipeline.md
+      - Scoring: scoring.md
+      - Reports: reports.md
+      - Report anatomy: report-anatomy.md
+      - Test generation: test-generation.md
+  - Operations:
+      - Security: security.md
+      - CI: ci.md
+  - Reference:
+      - API: api.md
+      - Markdown index: checkout.md
+      - Roadmap: ROADMAP.md
+      - Changelog: CHANGELOG.md
+
+exclude_docs: |
+  CRITIC.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            docstring_style: google
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true

@@ -36,10 +36,10 @@ The CLI does not call the network unless you pass `--llm`. The payload is gap me
 - Child environment is an allowlist. Timeouts kill the process tree.
 - Probes run out of process.
 - HTML and Markdown gap text are escaped.
-- `show` binds to `127.0.0.1` and only serves the report file.
+- `show` binds to `127.0.0.1` and serves `/`, `/report.html`, and `charts/*.svg`. Any other path is 404.
 - The gate treats a nonzero test exit, and a missing exit code on a measured run, as `blocked`. A numeric `--threshold` fails when the tests failed.
 - `analysis.json` must match this package version, must contain the analysis keys, and must be at most 100_000_000 bytes.
 
 ## What is not in place
 
-There is no OS container, no network namespace, and no read-only filesystem for `--dynamic`. A symlink that resolves outside the project root is not indexed. Directory symlinks are not followed. That is not a substitute for isolation.
+There is no OS container, no network namespace, and no read-only filesystem for `--dynamic`. Recoverage does not use a GPU. NVIDIA, AMD, and Apple GPUs are not queried. A symlink that resolves outside the project root is not indexed. Directory symlinks are not followed. That is not a substitute for isolation.

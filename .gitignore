@@ -9,6 +9,10 @@ __pycache__/
 htmlcov/
 dist/
 build/
+site/
+tmp-*/
+*.log
+docs/CRITIC.md
 .venv/
 venv/
 .env

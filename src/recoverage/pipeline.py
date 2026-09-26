@@ -35,7 +35,7 @@ from recoverage.sources import SourceCache
 from recoverage.structure import analyze_project, attach_sources
 
 
-_RUN_BUDGET_S = 600
+_RUN_BUDGET_S = 600  # baseline; HostBudget.detect() may scale it
 
 
 def run_analysis(
@@ -47,22 +47,29 @@ def run_analysis(
     dynamic: bool = False,
     deep: bool = False,
 ) -> Analysis:
+    from recoverage.host import HostBudget
+
+    budget = HostBudget.detect()
     if deep:
         dynamic = True
     started = time.monotonic()
-    profile = discover(path)
-    cache = SourceCache(Path(profile.root))
-    structures = analyze_project(profile, cache)
+    profile = discover(path, budget)
+    if budget.note:
+        profile.notes.append(budget.note)
+    cache = SourceCache(Path(profile.root), budget=budget.cache_bytes)
+    structures = analyze_project(profile, cache, workers=budget.parse_workers)
     attach_sources(structures, Path(profile.root), cache)
     output_dir.mkdir(parents=True, exist_ok=True)
-    if dynamic and time.monotonic() - started > _RUN_BUDGET_S:
+    if dynamic and not budget.temp_ok:
+        coverage = unmeasured(profile, structures, notes=[budget.note])
+    elif dynamic and time.monotonic() - started > budget.run_budget_s:
         coverage = unmeasured(
             profile,
             structures,
-            notes=[f"Run budget of {_RUN_BUDGET_S}s was spent before tests. Coverage was not measured."],
+            notes=[f"Run budget of {budget.run_budget_s}s was spent before tests. Coverage was not measured."],
         )
     elif dynamic:
-        coverage = collect_coverage(profile, structures, output_dir)
+        coverage = collect_coverage(profile, structures, output_dir, timeout=budget.coverage_timeout_s)
     else:
         coverage = unmeasured(
             profile,
@@ -81,15 +88,24 @@ def run_analysis(
     if llm_mode == "off":
         llm_name = "off"
     graph = index_project(profile)
-    if deep and time.monotonic() - started > _RUN_BUDGET_S:
-        note = f"Run budget of {_RUN_BUDGET_S}s was spent before deep probes."
+    if deep and not budget.allow_deep:
+        note = budget.note
+        pbt = {"ran": False, "trials": 0, "passed": 0, "failed": 0, "note": note}
+        mutation = {"ran": False, "killed": 0, "total": 0, "mutants": [], "note": note}
+        timing = {"ran": False, "regression": False, "note": note}
+        sbst = {"cases": [], "stalls": 0, "agents": [], "llm": False}
+    elif deep and time.monotonic() - started > budget.run_budget_s:
+        note = f"Run budget of {budget.run_budget_s}s was spent before deep probes."
         pbt = {"ran": False, "trials": 0, "passed": 0, "failed": 0, "note": note}
         mutation = {"ran": False, "killed": 0, "total": 0, "mutants": [], "note": note}
         timing = {"ran": False, "regression": False, "note": note}
         sbst = {"cases": [], "stalls": 0, "agents": [], "llm": False}
     elif deep:
         pbt = run_properties(profile, functions)
-        mutation = run_mutants(profile, functions)
+        if budget.temp_ok:
+            mutation = run_mutants(profile, functions)
+        else:
+            mutation = {"ran": False, "killed": 0, "total": 0, "mutants": [], "note": budget.note}
         timing = time_functions(profile, functions)
         sbst = search(profile, functions, client=llm_client)
     else:
@@ -127,7 +143,11 @@ def run_analysis(
 
 
 def write_analysis_reports(analysis: Analysis, output_dir: Path) -> tuple[Path, Path, Path]:
-    charts = write_charts(analysis, output_dir)
+    from recoverage.reportview import build_view
+    from recoverage.svgcharts import write_svgs
+
+    svgs = write_svgs(build_view(analysis), output_dir)
+    charts = {**write_charts(analysis, output_dir), **svgs}
     return write_reports(analysis, output_dir, charts)
 
 

@@ -19,60 +19,75 @@ _GATE_HEX = {
 
 
 def build_markdown(analysis: Analysis) -> str:
+    from recoverage.reportview import build_view
+
+    view = build_view(analysis)
     score = analysis.score
-    coverage = analysis.coverage
     lines = [
         "# Recoverage report",
         "",
-        f"**Merge Readiness Score: {score.score:.1f} / 100**  ",
-        f"**Gate: `{score.gate}`**  ",
-        f"**Badge: `{_badge(score.gate)}`**",
+        f"**Merge Readiness Score: {view.score:.1f} / 100**  ",
+        f"**Gate: `{view.gate}`**  ",
+        f"**Badge: `{view.badge}`**",
         "",
-        _gate_sentence(analysis),
+        view.gate_sentence,
         "",
-        f"Project: `{_display_root(analysis.project.root)}`  ",
-        f"Language: {analysis.project.primary_language}  ",
-        f"Test runner: {analysis.project.test_runner or 'none'}  ",
-        f"Coverage tool: {coverage.tool}  ",
-        f"LLM: {analysis.llm}  ",
-        f"Generated: {analysis.generated_at}",
+        f"Project: `{view.project_name}`  ",
+        f"Language: {view.language}  ",
+        f"Test runner: {view.test_runner}  ",
+        f"Coverage tool: {view.coverage_tool}  ",
+        f"LLM: {view.llm}  ",
+        f"Generated: {view.generated_at}",
         "",
         *_project_notes(analysis),
         f"<!-- recoverage:score={score.score:.1f};gate={score.gate};mutation={'true' if score.mutation_testing_ran else 'false'} -->",
         "",
+        "## Overview",
+        "",
+        "| Metric | Value |",
+        "| --- | --- |",
+        f"| Statement coverage | {_pct(view.line_percent)} |",
+        f"| Branch coverage | {_pct(view.branch_percent)} |",
+        f"| Gaps | {sum(view.severity_counts.values())} |",
+        f"| Mutation ran | {'yes' if view.mutation_ran else 'no'} |",
+        "",
         "## Coverage stats",
         "",
-        _coverage_table(analysis),
+        _coverage_table(view),
         "",
         "## Score factors",
         "",
-        _factor_table(analysis),
-        "",
-        _analytics_sections(analysis),
+        _factor_table(view),
         "",
         "## Coverage by package",
         "",
         "{{chart:coverage_by_package}}",
         "",
-        "## Risk hotspots",
-        "",
-        "{{chart:risk_hotspots}}",
-        "",
-        _hotspot_table(analysis),
-        "",
         "## Gap severity",
         "",
         "{{chart:gap_severity}}",
         "",
+        _analytics_sections(view),
+        "",
+        "## Risk hotspots",
+        "",
+        "{{chart:risk_hotspots}}",
+        "",
+        _hotspot_table(view),
+        "",
+        "## Files",
+        "",
+        _file_table(view),
+        "",
         "## Findings",
         "",
-        _findings(analysis),
+        _findings(view),
         "",
         "## Suggestions",
         "",
-        _suggestions(analysis),
+        "\n".join(f"- {line}" for line in view.suggestions),
         "",
-        RUBRIC_MD.strip(),
+        view.rubric,
         "",
     ]
     return "\n".join(lines)
@@ -137,25 +152,15 @@ def _markdown_with_images(markdown: str, charts: dict[str, Path], md_path: Path)
     return re.sub(r"\{\{chart:([a-z0-9_]+)\}\}", replace, markdown)
 
 
-def _coverage_table(analysis: Analysis) -> str:
-    coverage = analysis.coverage
-    rows = [
-        "| Metric | Value |",
-        "| --- | --- |",
-        f"| Project statement coverage | {_pct(coverage.line_percent)} |",
-        f"| Tool percent_covered | {_pct(coverage.tool_line_percent)} |",
-        f"| Branch coverage | {_pct(coverage.branch_percent)} |",
-        f"| Branch figure is runtime-tool-only | {'yes' if coverage.branch_is_tool else 'no'} |",
-        f"| Tool | {coverage.tool} |",
-        f"| Measured | {'yes' if coverage.measured else 'no'} |",
-        f"| Test exit code | {coverage.tests_exit_code if coverage.tests_exit_code is not None else 'n/a'} |",
-    ]
+def _coverage_table(view) -> str:
+    rows = ["| Metric | Value |", "| --- | --- |"]
+    rows.extend(f"| {row.metric} | {row.value} |" for row in view.coverage_rows)
     return "\n".join(rows)
 
 
-def _factor_table(analysis: Analysis) -> str:
+def _factor_table(view) -> str:
     rows = ["| Factor | Earned | Max | Heuristic | Detail |", "| --- | --- | --- | --- | --- |"]
-    for factor in analysis.score.factors:
+    for factor in view.factors:
         detail = factor.detail.replace("|", "/")
         rows.append(
             f"| {factor.title} | {factor.earned:.2f} | {factor.maximum:.0f} | "
@@ -164,30 +169,44 @@ def _factor_table(analysis: Analysis) -> str:
     return "\n".join(rows)
 
 
-def _hotspot_table(analysis: Analysis) -> str:
-    if not analysis.hotspots:
+def _hotspot_table(view) -> str:
+    if not view.hotspots:
         return "No hotspots."
     rows = ["| Function | File | Risk | Coverage | Tags |", "| --- | --- | --- | --- | --- |"]
-    for spot in analysis.hotspots:
+    for spot in view.hotspots:
         coverage = "n/a" if spot.coverage_ratio is None else f"{spot.coverage_ratio:.0%}"
         tags = ", ".join(spot.risk_tags) or "—"
+        rows.append(f"| `{spot.qualname}` | `{spot.file}` | {spot.risk_score:.2f} | {coverage} | {tags} |")
+    return "\n".join(rows)
+
+
+def _file_table(view) -> str:
+    if not view.files:
+        return "No files."
+    rows = ["| File | Statements | Coverage | Functions | Gaps | Worst |", "| --- | --- | --- | --- | --- | --- |"]
+    for row in view.files:
+        percent = "not measured" if row.line_percent is None else f"{row.line_percent:.1f}%"
         rows.append(
-            f"| `{spot.qualname}` | `{spot.file}` | {spot.risk_score:.2f} | {coverage} | {tags} |"
+            f"| `{row.path}` | {row.statements} | {percent} | {row.functions} | {row.gaps} | {row.worst_gap or '—'} |"
         )
     return "\n".join(rows)
 
 
-def _findings(analysis: Analysis) -> str:
-    if not analysis.gaps:
+def _findings(view) -> str:
+    if not view.findings:
         return "No gaps recorded."
     blocks = []
-    for gap in analysis.gaps:
+    current = None
+    for gap in view.findings:
+        if gap.severity != current:
+            current = gap.severity
+            blocks.append(f"### {current}")
         where = f"`{gap.file}`" if gap.file else "project"
         symbol = f" `{gap.symbol}`" if gap.symbol else ""
         heuristic = " Heuristic." if gap.heuristic else ""
         llm = " LLM-enriched." if gap.llm_enriched else ""
         blocks.append(
-            f"### {gap.id} · {gap.severity} · {_md(gap.title)}\n\n"
+            f"#### {gap.id} · {_md(gap.title)}\n\n"
             f"{where}{symbol}. Kind: `{gap.kind}`.{heuristic}{llm}\n\n"
             f"{_md(gap.why)}\n\n"
             f"Suggestion: {_md(gap.suggestion)}"
@@ -304,61 +323,53 @@ def _badge(gate: str) -> str:
     }[gate]
 
 
-def _analytics_sections(analysis: Analysis) -> str:
-    analytics = analysis.analytics or {}
-    mutation = analytics.get("mutation") or {}
-    prompt = analytics.get("prompt") or {}
-    blast = analytics.get("blast") or {}
-    timing = analytics.get("timing") or {}
-    pbt = analytics.get("pbt") or {}
-    graph = analytics.get("graph") or {}
+def _analytics_sections(view) -> str:
     rows = ["| Symbol | Trials | Passed | Failed |", "| --- | --- | --- | --- |"]
-    for row in pbt.get("properties") or []:
-        rows.append(
-            f"| `{row.get('symbol')}` | {row.get('trials')} | {row.get('passed')} | {row.get('failed')} |"
-        )
+    for row in view.pbt_rows:
+        rows.append(f"| `{row.symbol}` | {row.trials} | {row.passed} | {row.failed} |")
     if len(rows) == 2:
         rows.append("| — | 0 | 0 | 0 |")
-    communities = graph.get("communities") or []
-    audit = analytics.get("audit") or {}
+    audit_rows = ["| Dimension | Value | Threshold | Status |", "| --- | --- | --- | --- |"]
+    for row in view.audit_rows:
+        audit_rows.append(f"| {row.dimension} | {row.value} | {row.threshold} | {row.status} |")
+    if len(audit_rows) == 2:
+        audit_rows.append("| — | n/a | — | n/a |")
     return "\n".join(
         [
-            mutation.get("note") or "Mutation testing did not run.",
+            view.mutation_note,
             "",
             "## Authenticity scorecard",
             "",
-            audit.get("note") or "Authenticity measurements were not computed.",
+            view.audit_note,
             "",
-            _scorecard(audit),
+            "\n".join(audit_rows),
             "",
-            _crap_table(audit),
-            "",
-            _assertion_note(audit),
+            view.assertion_note,
             "",
             "## Property-based testing",
             "",
-            pbt.get("note") or "Property trials were not run.",
+            view.pbt_note,
             "",
             "\n".join(rows),
             "",
             "## Prompt coverage",
             "",
-            prompt.get("note") or "Prompt coverage was not computed.",
+            view.prompt_note,
             "",
             "## Blast radius",
             "",
-            blast.get("note") or "Blast radius was not computed.",
+            view.blast_note,
             "",
-            f"Union coverage: {_pct(blast.get('union_coverage'))}.",
+            f"Union coverage: {_pct(view.blast_union)}.",
             "",
             "## Execution time",
             "",
-            timing.get("note") or "Timing was not measured.",
+            view.timing_note,
             "",
             "## Code graph",
             "",
-            f"Tree-sitter index: {'yes' if graph.get('tree_sitter') else 'no'}. "
-            f"Entities: {len(graph.get('entities') or [])}. Communities: {len(communities)}.",
+            f"Tree-sitter index: {'yes' if view.tree_sitter else 'no'}. "
+            f"Entities: {view.entity_count}. Communities: {view.community_count}.",
         ]
     )
 

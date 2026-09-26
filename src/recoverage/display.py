@@ -23,18 +23,26 @@ def locate_html(path: Path, output: Path | None = None) -> Path:
 
 
 def serve_html(html_path: Path, *, port: int = 0, open_browser: bool = True, background: bool = False) -> ThreadingHTTPServer:
-    """Serve the existing file. `background=True` returns the server instead of blocking."""
+    """Serve the existing file and its SVG charts. `background=True` returns the server."""
     target = html_path.resolve()
-    payload = target.read_bytes()
+    files = {"/": target.read_bytes(), "/report.html": target.read_bytes()}
+    types = {"/": "text/html; charset=utf-8", "/report.html": "text/html; charset=utf-8"}
+    chart_dir = target.parent / "charts"
+    if chart_dir.is_dir():
+        for chart in chart_dir.glob("*.svg"):
+            route = "/charts/" + chart.name
+            files[route] = chart.read_bytes()
+            types[route] = "image/svg+xml"
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             route = self.path.split("?", 1)[0]
-            if route not in {"/", "/report.html"}:
+            payload = files.get(route)
+            if payload is None:
                 self.send_error(404)
                 return
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", types[route])
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)

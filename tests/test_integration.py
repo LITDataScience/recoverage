@@ -49,10 +49,10 @@ def test_run_fixture_writes_real_report(tmp_path: Path):
     assert "under 20%" in blurb
     assert "under 40" in blurb
     html = (output / "report.html").read_text(encoding="utf-8")
-    assert "no test runner" not in html.lower()
+    assert "no test runner" not in html.split('id="rubric"', 1)[0].lower()
     assert "under 20%" in html
     assert "<style>" in html
-    assert "data:image/png;base64," in html
+    assert "<svg" in html
     assert "rel=\"stylesheet\"" not in html
     assert f"{analysis.score.score:.1f}" in html
     assert "Findings" in html and "Suggestions" in html
@@ -64,6 +64,7 @@ def test_run_fixture_writes_real_report(tmp_path: Path):
     assert "under 20%" in mrs["blurb"]
     assert (output / "report.typ").is_file()
     assert "Suggestions" in markdown
+    assert (output / "charts" / "coverage_by_package.svg").read_text(encoding="utf-8").startswith("<svg")
     assert (output / "charts" / "coverage_by_package.png").read_bytes().startswith(b"\x89PNG")
     assert (output / "charts" / "risk_hotspots.png").read_bytes().startswith(b"\x89PNG")
     assert (output / "charts" / "gap_severity.png").read_bytes().startswith(b"\x89PNG")

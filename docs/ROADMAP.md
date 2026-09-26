@@ -1,33 +1,21 @@
 # Roadmap
 
-Order is from `docs/CRITIC.md`. The bug scoreboard is done. What is left before an upload is [pypi.md](pypi.md): the PyPI trusted publisher and a GitHub Release. There is still no OS container. The project page has to say so.
+`0.1.0` is on PyPI as `coderecoverage`. This tree is `0.2.0` (dashboard, SVG charts, MkDocs site) and is not tagged yet. Cut it with Actions → **Release** after CI is green. Steps are in [pypi.md](pypi.md).
 
-## Done in this pass
+There is still no OS container. `--dynamic` and `--deep` run the checkout as you. The README says so.
 
-- **CRIT-03.** `decide_gate` blocks when runtime coverage was measured and `tests_exit_code` is not 0. The gate sentence says `the test run exited N`. Named thresholds (`merge-ready`, `production-ready`) fail. A numeric `--threshold` still compares MRS only.
-- **CRIT-04, partial.** The CLI defaults to offline. `--llm` is required even when `RECOVERAGE_LLM_API_KEY` is set. `--no-llm` is an alias of the default. Non-HTTPS base URLs are rejected except loopback. SBST catches a failed LLM call and falls back to AST constants. Still open: payload minimization, response size limits, redirect checks, and a preview of the exact body before send. Library `llm_mode="auto"` is unchanged.
-- **HIGH-09.** `.github/workflows/ci.yml` tests 3.11, 3.12, and 3.13 and runs `twine check` on the built distributions. The 3.8–3.10 pylint workflow is gone.
-- **Sample report.** `examples/sample-report/analysis.json` and `report.md` no longer contain `/agent/recoverage/...`.
+## Done
 
-## Before the upload
+What shipped: static default, scrubbed `analysis.json`, version and size checks, probes out of process, `--deep` for property/mutation/timing/search, `coverage` as the only required dependency, SVG charts without matplotlib, a one-file dashboard, host budgets that follow CPU and RAM, and the publish workflow that uploads the wheel it tested. `0.1.0` was published from that workflow. Review notes stay on the maintainer's machine. They are not part of this site.
 
-- Create the PyPI trusted publisher and the GitHub environment `pypi`. Cut a release from the **Release** workflow (`.github/workflows/release.yml`). That publishes the GitHub Release, and `python-publish.yml` uploads it. Steps are in [pypi.md](pypi.md).
-- Do not describe `--dynamic` as sandboxed. The README states the limit: trusted trees, static default, no OS container.
+## Still open
 
-## P1
-
-- **HIGH-05.** Fast vs deep mode. Each engine selectable and time-bounded. Sparse PageRank dangling-mass (one scalar per iteration, not a loop over every node). Cache parses by content hash. Benchmarks at 1k/10k/100k files before any performance claim.
-- **HIGH-06.** Probes out of process. Until then, a real lock around `_DEPTH`, and `finally` restoration of `sys.path`, `sys.modules`, and the trace hook.
-- **HIGH-07.** Unique temp coverage directory per run. Require the fresh report file. Never read a leftover `js-coverage/*.json`.
-- **MED-01.** Core install plus extras (`python-coverage`, `javascript`, `graphs`, `pdf`, `dev`). `--no-pdf` so a missing Typst binary does not turn a finished analysis into exit 2.
-- **MED-02.** One version source (`pyproject.toml` and `src/recoverage/version.py` are both `0.1.0` today). Classifiers, project URLs. Confirm sdist and wheel file lists in CI.
-
-## P2
-
-- **MED-03.** Escape or strictly render Markdown. Hostile strings in report tests.
-- **MED-04.** Schema, version, and size checks on `analysis.json`. Reject symlinks that leave the project root. Atomic writes.
-- **MED-05.** Trust manifest package roots and the configured test script. Suffix path matching should become unknown, not a guess. Fixtures for namespace packages, monorepos, mixed languages, duplicate basenames.
+- **HOST-01..03.** Done. Budgets scale with the machine. One probe worker. The parse pool is threads, not a native parser.
+- **SEC-06.** `SourceCache` is an LRU (64 MB on an 8 GB machine, less below 4 GB, 128 MB on a large machine) cleared at the end of `run_analysis`. A library caller that raises mid-run keeps that memory until the frame is collected.
+- **PERF-13.** Python files are parsed with `ast` and again with Tree-sitter. One intermediate representation would remove the second parse. A Rust parser stays out of the required install.
+- **PERF-14.** Louvain is the naive local-move loop. It is fine at the discovery cap.
+- No OS container, network namespace, or read-only filesystem for `--dynamic`.
 
 ## Explicitly not the next step
 
-Do not describe the temp copy as a sandbox. Do not upload a wheel that `python-publish.yml` did not build.
+Do not describe the temp copy as a sandbox. Do not upload a wheel that `python-publish.yml` did not build. Do not `git tag` by hand.

@@ -19,6 +19,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.command == "show":
         return _show(args)
+    if args.command == "docs":
+        return _docs(args)
     try:
         project = Path(args.path).resolve()
         output = Path(args.output).resolve() if args.output else (project / "recoverage-out")
@@ -108,6 +110,8 @@ def _parser() -> argparse.ArgumentParser:
     report.add_argument("--input", help="Path to an existing analysis.json.")
     generate = sub.add_parser("generate", help="Write missing tests in the project's framework. Will not overwrite.")
     add_common(generate, generate=True)
+    docs = sub.add_parser("docs", help="Open the documentation site, or print the checkout path.")
+    docs.add_argument("--offline", action="store_true", help="Print the docs directory in this checkout instead of opening a browser.")
     show = sub.add_parser("show", help="Serve the HTML report already written by run or report.")
     show.add_argument("path", nargs="?", default=".", help="Project root, report directory, or report.html.")
     show.add_argument("--output", help="Report directory, if it is not <path>/recoverage-out or <path> itself.")
@@ -123,6 +127,24 @@ def _llm_mode(args: argparse.Namespace) -> str:
     if args.llm:
         return "on"
     return "off"
+
+
+_DOCS_URL = "https://litdatascience.github.io/recoverage/"
+
+
+def _docs(args: argparse.Namespace) -> int:
+    checkout = Path(__file__).resolve().parents[2] / "docs"
+    if args.offline:
+        if (checkout / "index.md").is_file():
+            print(checkout)
+            return 0
+        print(f"recoverage: this install has no docs checkout. Published site: {_DOCS_URL}", file=sys.stderr)
+        return 2
+    import webbrowser
+
+    print(_DOCS_URL)
+    webbrowser.open(_DOCS_URL)
+    return 0
 
 
 def _show(args: argparse.Namespace) -> int:
@@ -146,7 +168,7 @@ def _print_summary(analysis, output: Path) -> None:
         counts[gap.severity] = counts.get(gap.severity, 0) + 1
     summary = ", ".join(f"{name} {counts[name]}" for name in ("critical", "high", "medium", "low") if name in counts)
     print(f"Gaps: {len(analysis.gaps)}" + (f" ({summary})" if summary else ""))
-    written = [output / "report.md", output / "report.html"]
+    written = [output / "report.html", output / "report.md"]
     pdf = output / "report.pdf"
     if pdf.is_file():
         written.append(pdf)

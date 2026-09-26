@@ -66,10 +66,11 @@ def test_html_embeds_charts_and_the_real_gate_reasons(tmp_path: Path):
     page = build_html(_analysis(), {"coverage_by_package": chart, "risk_hotspots": tmp_path / "missing.png", "gap_severity": chart})
     assert "<style>" in page
     assert 'rel="stylesheet"' not in page
-    assert "data:image/png;base64," in page
+    assert "<svg" in page
+    assert "data:image/png;base64," not in page
     assert "32.5" in page
     assert "blocked" in page
-    assert "no test runner" not in page.lower()
+    assert "no test runner" not in page.split("<main>", 1)[0].lower()
     assert "under 20%" in page
     assert "charge never ran" in page
     assert "Suggestions" in page

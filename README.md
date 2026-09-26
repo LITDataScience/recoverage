@@ -1,48 +1,73 @@
 # Recoverage
 
-Recoverage measures a project, maps the gaps onto functions, and scores whether the suite is ready to merge. It discovers the language and test runner, runs coverage when a tool is already installed, and writes one analysis as Markdown, a self-contained HTML file, and a PDF.
+[![PyPI](https://img.shields.io/pypi/v/coderecoverage)](https://pypi.org/project/coderecoverage/)
+[![Python](https://img.shields.io/pypi/pyversions/coderecoverage)](https://pypi.org/project/coderecoverage/)
+[![CI](https://img.shields.io/github/actions/workflow/status/LITDataScience/recoverage/ci.yml?branch=main)](https://github.com/LITDataScience/recoverage/actions/workflows/ci.yml)
 
-It can also draft tests in the project's own runner. Drafts are new files. Existing tests are never overwritten or deleted.
-
-Trusted trees only. This is not a scanner for a hostile repository. Default `recoverage run` does not execute project code and does not start a test runner. `--dynamic` and `--deep` run that checkout as you, in a child process, with no OS sandbox. See [docs/security.md](docs/security.md).
-
-The design name in the original spec is OmniCov-AI. The package and the CLI are `recoverage`.
-
-## Install
-
-Python 3.11+.
+Recoverage scores whether a test suite is ready to merge, then shows the gaps on the functions that matter.
 
 ```bash
 python3 -m pip install coderecoverage
+recoverage run .
 ```
 
-Charts and the Tree-sitter call graph need the extra: `python3 -m pip install "coderecoverage[report]"`. From a checkout of this repo, `python3 -m pip install -e ".[dev]"` installs the test extra. `python3 -m recoverage` works from that checkout before the first PyPI release exists.
+Trusted trees only. Default `run` does not execute project code. `--dynamic` and `--deep` run that checkout as you, with no OS sandbox. Read [docs/security.md](docs/security.md) before you point it at a repository.
 
-PDF compilation needs the [Typst](https://github.com/typst/typst) CLI on `PATH`. Without it, Markdown and HTML still write and the command continues. A Typst compile error still exits `2`.
+No GPU is required or used. NVIDIA, AMD, and Mac GPUs do not change the run. The work is CPython on the CPU.
+
+The PyPI project is `coderecoverage`. The command and the import are `recoverage`. `0.1.0` is the release on PyPI. This checkout is `0.2.0`.
+
+<p align="center">
+  <img src="docs/assets/dashboard.png" alt="Recoverage dashboard for the shop fixture: score 7.5, gate blocked, statement coverage 16.7%" width="880">
+</p>
+
+Open the same page locally with `recoverage show examples/sample-report`. The published guide is `recoverage docs`.
+
+## Install
+
+Python 3.11+. SVG charts are in the normal install. PNG charts and the Tree-sitter call graph are `python3 -m pip install "coderecoverage[report]"`. From this checkout, `python3 -m pip install -e ".[dev]"`.
+
+PDF compilation needs the [Typst](https://github.com/typst/typst) CLI on `PATH`. Without it, Markdown and HTML still write and the command continues.
 
 ## Try the fixture
 
-```bash
-python3 -m recoverage run examples/fixture --output examples/sample-report
-python3 -m recoverage show examples/sample-report
-```
-
-`examples/sample-report/` is a real run of that fixture (MRS 32.5, gate `blocked`, statement coverage 16.7%).
+`examples/fixture` is a small shop package. One test covers the cart. Payments and pricing are not covered. The checked-in sample is a `--dynamic` run: **MRS 7.5**, gate `blocked`, statement coverage **16.7%**.
 
 ```bash
-python3 -m pytest
+python3 -m recoverage run examples/fixture --output examples/sample-report --dynamic --no-llm
+python3 -m recoverage show examples/sample-report --no-open
 ```
 
-## CLI
+Omit `--dynamic` and coverage is `not measured`, not `0%`.
+
+<details>
+<summary>Commands</summary>
 
 ```bash
 recoverage run [path] [--output DIR] [--dynamic] [--deep] [--threshold GATE|SCORE] [--llm | --no-llm]
 recoverage report [path] [--output DIR] [--input analysis.json] [--dynamic] [--deep] [--threshold GATE|SCORE] [--llm | --no-llm]
 recoverage generate [path] [--output DIR] [--dry-run] [--dynamic] [--deep] [--llm | --no-llm]
 recoverage show [path] [--output DIR] [--port N] [--no-open]
+recoverage docs [--offline]
 ```
 
-Exit code is `1` when `--threshold` is missed, `2` on usage or setup errors, `0` otherwise. The default is static and offline. `--dynamic` runs the project's tests. `--deep` implies `--dynamic` and also runs property, mutation, timing, and search probes out of process. `--llm` is what sends gap metadata to an OpenAI-compatible API. Details are in [docs/cli.md](docs/cli.md).
+Exit code is `1` when `--threshold` is missed, `2` on usage or setup errors, `0` otherwise. `--deep` implies `--dynamic` and also runs property, mutation, timing, and search probes out of process. `--llm` is what sends gap metadata to an OpenAI-compatible API. A machine under 2 GB of RAM does not start those probes. A temp volume under 1 GB free does not start a temp copy. Details are in [docs/cli.md](docs/cli.md).
+
+</details>
+
+<details>
+<summary>Gates</summary>
+
+| Gate | You can merge when |
+| --- | --- |
+| blocked | No. Missing runner, coverage under 20%, score under 40, or the tests did not exit 0. |
+| needs-review | Not yet. A runner exists and the score is at least 40, but the merge bar is open. |
+| merge-ready | Score at least 70, statement coverage at least 60%, coverage was measured, no critical gap. |
+| production-ready | Score at least 85, with the same coverage and gap rules. |
+
+The full rubric, including how each factor is measured, is below. `--threshold` takes a gate name or a number.
+
+</details>
 
 ## Docs
 
@@ -51,6 +76,7 @@ Exit code is `1` when `--threshold` is missed, `2` on usage or setup errors, `0`
 - [Pipeline](docs/pipeline.md)
 - [Scoring](docs/scoring.md)
 - [Reports](docs/reports.md)
+- [Report anatomy](docs/report-anatomy.md)
 - [Test generation](docs/test-generation.md)
 - [Security](docs/security.md)
 - [Publishing](docs/pypi.md)

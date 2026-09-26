@@ -1,6 +1,6 @@
 # Pipeline
 
-`run_analysis` in `src/recoverage/pipeline.py` always runs every phase below. There is no fast mode and no flag to skip an engine.
+`run_analysis` in `src/recoverage/pipeline.py` always discovers, parses, maps gaps, builds the call graph, and scores. Coverage runs only with `--dynamic`. Property trials, mutation, timing, and search run only with `--deep` (which implies `--dynamic`). There is no separate flag per engine.
 
 ```mermaid
 flowchart LR
@@ -23,9 +23,12 @@ flowchart LR
 
 | Module | Role |
 | --- | --- |
-| `cli.py` | argparse. Exit codes. LLM mode. |
+| `host.py` | CPU, RAM, and free temp space. Scales the walk, the cache, the run budget, and the parse pool. |
+| `cli.py` | argparse. Exit codes. LLM mode. Docs URL. |
 | `pipeline.py` | Orders the phases, writes `analysis.json`, `execute_run` / `execute_report` / `execute_generate`. |
-| `discover.py` | Walks the tree. Language, runner, packages, flake markers. Suffix check before `stat`; 20_000 files or 200 MB cap. |
+| `reportview.py` | One projection of `Analysis` shared by Markdown, HTML, and the PDF. |
+| `svgcharts.py` | Gauge and bar charts as SVG. No matplotlib. |
+| `discover.py` | Walks the tree. Language, runner, packages, flake markers. Suffix check before `stat`. The cap is 20_000 files or 200 MB on an 8 GB machine, and `host.py` scales it. |
 | `sources.py` | `SourceCache`: one read and one `ast.parse` per file per run, 64 MB LRU, shared by structure, gaps, audit, and entropy. |
 | `structure.py` | Functions, branches, cyclomatic complexity, heuristic risk tags. Statement-skeleton walks; one pass per function body. |
 | `adapters/python_cov.py` | `coverage run --branch`, then `coverage json`. |
@@ -45,20 +48,20 @@ flowchart LR
 | `score.py` | Weighted MRS and the gate. Reads `RUBRIC.md` at import. |
 | `llm.py` | Optional OpenAI-compatible chat client. |
 | `report.py` | Markdown. |
-| `html_report.py` | Self-contained HTML. Escapes text. |
-| `charts.py` | Three matplotlib PNGs. |
-| `typst_render.py` | `mrs.json` + `templates/report.typ` → PDF. |
-| `drafts.py` | Pytest and Hypothesis source from SBST cases and PBT rows. |
+| `html_report.py` | Single-file dashboard. Inline SVG, escaped text, CSP hashes. |
+| `charts.py` | Three matplotlib PNGs, written only when matplotlib imports. |
+| `typst_render.py` | `mrs.json` + `templates/report.typ` → PDF. Missing Typst warns and exits 0. |
+| `drafts.py` | Plain pytest from SBST cases and a fixed `_CASES` property sample. No Hypothesis import. |
 | `assure.py` | Temp copy, compile, five runs, coverage-or-kill filter, copy back. |
 | `generate.py` | `PlannedTest` record. |
 | `display.py` | Loopback server for `show`. |
 | `mcp_api.py` | In-process JSON-RPC over `CodeGraph`. No socket. |
 | `models.py` | Dataclasses and `analysis.json` (de)serialization. |
-| `version.py` | `__version__`, also duplicated in `pyproject.toml`. |
+| `version.py` | `__version__`. `pyproject.toml` reads it. It is not copied there. |
 
 ## Discovery
 
-`discover` prunes `.git`, virtualenvs, `node_modules`, `.next`, caches, `dist`, `build`, `recoverage-out`, `sample-report`, and any directory whose name starts with `.` before descending. A directory that contains its own `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, or `pom.xml` is recorded on `skipped_projects` and not walked. Files over 1_000_000 bytes are skipped. The walk stops after 20_000 files and says the report is partial.
+`discover` prunes `.git`, virtualenvs, `node_modules`, `.next`, caches, `dist`, `build`, `recoverage-out`, `sample-report`, and any directory whose name starts with `.` before descending. A directory that contains its own `pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`, or `pom.xml` is recorded on `skipped_projects` and not walked. Files over 1_000_000 bytes are skipped. The walk stops at the host budget (20_000 files or 200 MB on an 8 GB machine) and says the report is partial.
 
 Primary language is the source extension with the most files. A `pyproject.toml` with any Python file selects Python. A `package.json` and no `pyproject.toml` selects TypeScript or JavaScript only when those files are at least as numerous as every other language. Python packages are the immediate children of `src/` that contain `__init__.py`, or of the project root when that layout is absent. Namespace packages and deeper layouts are not detected.
 

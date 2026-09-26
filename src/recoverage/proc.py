@@ -42,6 +42,9 @@ def temp_copy(root: Path, *, prefix: str) -> tuple[Path, Path]:
     Symlinks are copied as links, not followed, so a link that points outside the
     checkout cannot pull foreign files into the copy.
     """
+    from recoverage.host import assert_temp_space
+
+    assert_temp_space()
     parent = Path(tempfile.mkdtemp(prefix=prefix))
     copied = parent / "project"
     shutil.copytree(root, copied, symlinks=True, ignore=_copy_ignore)

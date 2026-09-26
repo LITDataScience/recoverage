@@ -1,0 +1,16 @@
+INHERIT: mkdocs.yml
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            docstring_style: google
+            members_order: source
+  - with-pdf:
+      output_path: recoverage-docs.pdf
+      cover_subtitle: Measure, score, and explain test readiness
+      author: Recoverage

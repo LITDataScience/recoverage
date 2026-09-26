@@ -66,7 +66,7 @@ def test_javascript_and_generic(tmp_path: Path):
     assert go.language == "go"
 
 
-def test_walk_prunes_node_modules_and_records_workspaces(tmp_path: Path, monkeypatch):
+def test_walk_prunes_node_modules_and_records_workspaces(tmp_path: Path):
     (tmp_path / "app.ts").write_text("export function ping() { return 1 }\n", encoding="utf-8")
     nested = tmp_path / "node_modules" / "left-pad"
     nested.mkdir(parents=True)
@@ -80,8 +80,11 @@ def test_walk_prunes_node_modules_and_records_workspaces(tmp_path: Path, monkeyp
     assert profile.source_files == ["app.ts"]
     assert profile.skipped_projects == ["apps/web"]
     assert any("apps/web" in note for note in profile.notes)
-    monkeypatch.setattr("recoverage.discover.MAX_WALK_FILES", 1)
-    capped = discover(tmp_path)
+    from dataclasses import replace
+
+    from recoverage.host import HostBudget
+
+    capped = discover(tmp_path, replace(HostBudget.baseline(), walk_files=1))
     assert any("partial" in note for note in capped.notes)
 
 

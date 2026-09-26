@@ -1,4 +1,4 @@
-"""Render spec-based tests and Hypothesis properties. No captured return values."""
+"""Render spec-based pytest files. Property drafts use a fixed sample, not Hypothesis. No captured return values."""
 
 from __future__ import annotations
 

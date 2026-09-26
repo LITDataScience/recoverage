@@ -53,61 +53,64 @@ def write_typst_pdf(analysis: Analysis, output_dir: Path) -> Path:
 
 
 def _view(analysis: Analysis) -> dict:
-    from recoverage.report import _gate_sentence
+    from recoverage.reportview import build_view
 
-    badge, color = _BADGE[analysis.score.gate]
-    analytics = analysis.analytics or {}
-    pbt = analytics.get("pbt") or {}
-    counts = {name: 0 for name in _SEVERITY_COLORS}
-    for gap in analysis.gaps:
-        if gap.severity in counts:
-            counts[gap.severity] += 1
-    suggestions = _suggestions(analysis)
+    view = build_view(analysis)
+    shown = view.files[:60]
     return {
-        "score": analysis.score.score,
-        "gate": analysis.score.gate,
-        "blurb": _gate_sentence(analysis),
-        "badge": badge,
-        "badge_color": color,
+        "score": view.score,
+        "gate": view.gate,
+        "blurb": view.gate_sentence,
+        "badge": view.badge,
+        "badge_color": view.badge_color,
+        "project": view.project_name,
+        "line": "not measured" if view.line_percent is None else f"{view.line_percent:.1f}%",
+        "branch": "not measured" if view.branch_percent is None else f"{view.branch_percent:.1f}%",
+        "gap_count": sum(view.severity_counts.values()),
+        "mutation_ran": "yes" if view.mutation_ran else "no",
         "factors": [
-            {
-                "title": factor.title,
-                "earned": factor.earned,
-                "maximum": factor.maximum,
-                "detail": factor.detail,
-            }
-            for factor in analysis.score.factors
+            {"title": factor.title, "earned": factor.earned, "maximum": factor.maximum, "detail": factor.detail}
+            for factor in view.factors
         ],
-        "modules": [
-            {"name": item.name, "line_percent": item.line_percent}
-            for item in analysis.modules
-        ],
+        "modules": [{"name": item.name, "line_percent": item.line_percent} for item in view.modules],
         "severities": [
-            {"name": name, "count": counts[name], "color": _SEVERITY_COLORS[name]}
+            {"name": name, "count": view.severity_counts[name], "color": _SEVERITY_COLORS[name]}
             for name in ("critical", "high", "medium", "low")
         ],
+        "files": [
+            {
+                "path": row.path,
+                "statements": row.statements,
+                "coverage": "not measured" if row.line_percent is None else f"{row.line_percent:.1f}%",
+                "gaps": row.gaps,
+            }
+            for row in shown
+        ],
+        "files_omitted": max(0, len(view.files) - len(shown)),
+        "findings": [
+            {
+                "id": gap.id,
+                "severity": gap.severity,
+                "title": gap.title,
+                "where": gap.file or "project",
+                "why": gap.why,
+            }
+            for gap in view.findings
+        ],
         "pbt": {
-            "note": pbt.get("note") or "Property trials were not run.",
+            "note": view.pbt_note,
             "rows": [
-                {
-                    "symbol": row.get("symbol", ""),
-                    "trials": row.get("trials", 0),
-                    "passed": row.get("passed", 0),
-                    "failed": row.get("failed", 0),
-                }
-                for row in pbt.get("properties") or []
+                {"symbol": row.symbol, "trials": row.trials, "passed": row.passed, "failed": row.failed}
+                for row in view.pbt_rows
             ],
         },
-        "mutation": (analytics.get("mutation") or {}).get("note") or "Mutation testing was not run.",
-        "prompt": (analytics.get("prompt") or {}).get("note") or "Prompt coverage was not computed.",
-        "blast": (analytics.get("blast") or {}).get("note") or "Blast radius was not computed.",
-        "timing": (analytics.get("timing") or {}).get("note") or "Timing was not measured.",
-        "audit": {
-            "note": (analytics.get("audit") or {}).get("note") or "Authenticity measurements were not computed.",
-            "rows": (analytics.get("audit") or {}).get("scorecard") or [],
-        },
-        "suggestions": suggestions,
-        "rubric": RUBRIC_MD.strip(),
+        "mutation": view.mutation_note,
+        "prompt": view.prompt_note,
+        "blast": view.blast_note,
+        "timing": view.timing_note,
+        "audit": {"note": view.audit_note, "rows": [row.__dict__ for row in view.audit_rows]},
+        "suggestions": list(view.suggestions),
+        "rubric": view.rubric,
     }
 
 

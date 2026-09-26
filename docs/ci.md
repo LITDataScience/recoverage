@@ -4,7 +4,7 @@ Copy `examples/ci/recoverage.yml` to `.github/workflows/recoverage.yml` on a pro
 
 Gate rank is `blocked` < `needs-review` < `merge-ready` < `production-ready`. A named gate is blocked when the project's own tests exit nonzero, so a red suite cannot clear `merge-ready`. A numeric threshold also fails when the test run failed.
 
-The workflow's `pip install coderecoverage` line is for after this package is published. From a checkout of this repo, install with `pip install -e .` instead.
+`pip install coderecoverage` installs the PyPI release (`0.1.0` until `0.2.0` is tagged). From a checkout of this repo, `pip install -e .` installs this tree, including the dashboard.
 
 ## Artifacts
 
@@ -14,8 +14,10 @@ The example checks out the project. Default `recoverage run` does not execute it
 
 ## This repository's own CI
 
-`.github/workflows/ci.yml` tests Python 3.11, 3.12, and 3.13 (`pip install -e ".[dev]"`, Typst installed, `python -m pytest`) and builds a wheel plus sdist with `twine check`. It does not publish.
+`.github/workflows/ci.yml` tests Python 3.11, 3.12, and 3.13 (`pip install -e ".[dev]"`, Typst installed, `python -m pytest`), builds a wheel plus sdist with `twine check`, and runs `mkdocs build --strict`. It does not publish.
 
-`.github/workflows/release.yml` is run by hand from the Actions tab, on `main` only. It promotes `## [Unreleased]` in `docs/CHANGELOG.md`, tags `v` plus `src/recoverage/version.py`, and publishes the GitHub Release. That is the only tag path.
+`.github/workflows/docs.yml` builds the same site with the PDF plugin and deploys `site/` to GitHub Pages on push to `main`.
 
-`.github/workflows/python-publish.yml` tests, builds, installs the wheel, and uploads to PyPI with trusted publishing when a GitHub Release is published. It refuses a tag that does not match `version.py`. Actions are commit pins. The account steps are in [pypi.md](pypi.md). Do not upload a wheel built outside that workflow.
+`.github/workflows/release.yml` is run by hand from the Actions tab, on `main` only. It promotes `## [Unreleased]` in `docs/CHANGELOG.md`, tags `v` plus `src/recoverage/version.py`, publishes the GitHub Release, and starts the PyPI upload on that tag. That is the only tag path.
+
+`.github/workflows/python-publish.yml` tests, builds, installs the wheel, and uploads to PyPI with trusted publishing when a GitHub Release is published, and when the Release workflow dispatches it on the tag. It refuses a tag that does not match `version.py`. The `pypi` environment allows only `v*` tags. Actions are commit pins. The account steps are in [pypi.md](pypi.md). Do not upload a wheel built outside that workflow.

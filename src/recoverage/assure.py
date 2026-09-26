@@ -24,8 +24,14 @@ def assure_and_write(analysis: Analysis, planned: list[tuple[str, str]], *, dry_
     if dry_run:
         trace.append({"agent": "tester", "action": "dry-run", "files": [path for path, _content in planned]})
         return [PlannedTest(path=path, content=content, action="dry-run") for path, content in planned], trace
+    from recoverage.host import TempSpaceError
+
     root = Path(analysis.project.root).resolve()
-    parent, sandbox = temp_copy(root, prefix="recoverage-sandbox-")
+    try:
+        parent, sandbox = temp_copy(root, prefix="recoverage-sandbox-")
+    except TempSpaceError as exc:
+        trace.append({"agent": "tester", "action": "skipped-temp", "reason": str(exc)})
+        return [], trace
     written: list[Path] = []
     try:
         for relative, content in planned:
