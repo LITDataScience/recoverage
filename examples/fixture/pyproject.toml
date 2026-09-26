@@ -2,7 +2,9 @@
 name = "shop"
 version = "0.0.1"
 requires-python = ">=3.11"
-description = "Intentionally under-tested shop library used by Recoverage's own tests."
+description = "Shop library used by Recoverage's sample report."
+
+dependencies = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

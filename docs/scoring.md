@@ -8,7 +8,7 @@ The score is the Merge Readiness Score (MRS), 0–100. Weights are fixed. It is 
 | Property-based resilience | 25 | `passed / trials` across structural conformance, determinism, and entity substitution. At least 1,000 inputs when pure public functions exist (capped at 4 functions). Failing inputs are shrunk. |
 | Prompt / semantic alignment | 15 | ΔH: Shannon entropy of spec tokens (docstrings, signatures, `README.md`) minus the entropy after dropping tokens that appear in tests. No spec text scores 0. Labeled lexical, not attention. |
 | Blast radius safety | 10 | Statement coverage of functions inside a 2-hop undirected radius of the changed symbols. With no diff, the radius is the whole indexed graph and the report says so. |
-| Execution-time efficiency | 10 | Mann-Whitney U between a small input and a heavier input on this revision, 21 repeats, up to 3 functions. Points drop to 0 only when p < 0.05 and the median is more than 8× slower. |
+| Execution-time efficiency | 10 | Mann-Whitney U between a small input and a heavier input on this revision, 21 repeats, up to 3 functions. Points drop to 0 only when p < 0.05 and the median is more than 8× slower after scaling for a larger list. A list of 200 items versus 3 is more work, not a regression by itself. |
 
 Flake markers found by a static scan subtract 2 points, floored at 0. That scan is not a reproduction.
 

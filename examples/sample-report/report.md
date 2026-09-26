@@ -1,22 +1,22 @@
 # Recoverage report
 
-**Merge Readiness Score: 60.0 / 100**  
-**Gate: `needs-review`**  
-**Badge: `NEEDS REVIEW`**
+**Merge Readiness Score: 95.0 / 100**  
+**Gate: `production-ready`**  
+**Badge: `PRODUCTION READY`**
 
-Needs review. The Merge Readiness Score is 60.0, below the merge bar of 70.
+Production ready under this rubric: Merge Readiness Score at least 85, measured coverage, and no critical gap. This is not a security audit.
 
 Project: `fixture`  
 Language: python  
 Test runner: pytest  
 Coverage tool: coverage.py  
 LLM: off  
-Generated: 2026-09-26T09:45:53+00:00
+Generated: 2026-09-26T09:53:19+00:00
 
 
-- Host budget: 16 cores, 31.9 GB RAM. Walk cap is 40000 files, cache is 128 MB, parse workers are 8.
+- Host budget: 4 cores, 8.0 GB RAM. Baseline caps: walk 20000 files / 200 MB, cache 64 MB, run 600s, parse workers 1.
 
-<!-- recoverage:score=60.0;gate=needs-review;mutation=false -->
+<!-- recoverage:score=95.0;gate=production-ready;mutation=true -->
 
 ## Overview
 
@@ -25,7 +25,7 @@ Generated: 2026-09-26T09:45:53+00:00
 | Statement coverage | 100.0% |
 | Branch coverage | 100.0% |
 | Gaps | 0 |
-| Mutation ran | no |
+| Mutation ran | yes |
 
 ## Coverage stats
 
@@ -44,10 +44,10 @@ Generated: 2026-09-26T09:45:53+00:00
 | Factor | Earned | Max | Heuristic | Detail |
 | --- | --- | --- | --- | --- |
 | Structural coverage | 40.00 | 40 | no | Statement coverage 100.0% and branch coverage 100.0% combine to 100.0 before the 40-point weight. |
-| Property-based resilience | 0.00 | 25 | no | Deep probes were not requested. |
+| Property-based resilience | 25.00 | 25 | no | Ran 349 property trials across structural conformance, determinism, and entity substitution. Failing inputs were shrunk toward simpler values. |
 | Prompt / semantic alignment | 10.00 | 15 | yes | ΔH coverage 66.7%. ΔH is the drop in Shannon entropy of specification tokens after removing tokens named by tests. This is a lexical spotlight, not transformer attention. |
 | Blast radius safety | 10.00 | 10 | yes | No diff was supplied. The radius is the whole indexed graph, so union coverage collapses to coverage of those functions. |
-| Execution-time efficiency | 0.00 | 10 | no | Timing was not measured. |
+| Execution-time efficiency | 10.00 | 10 | no | Mann-Whitney U compared baseline inputs with heavier inputs on this same revision. A regression is recorded only when p < 0.05 and the median is more than 8x slower after allowing for a larger list input. This is not a cross-commit EffiBench run. |
 
 ## Coverage by package
 
@@ -57,7 +57,7 @@ Generated: 2026-09-26T09:45:53+00:00
 
 ![gap severity](charts/gap_severity.svg)
 
-Mutation testing did not run.
+Killed 5/5 viable mutants on a temp copy (0 timeouts counted as killed, 0 unviable excluded). MSI 100.0. MSI_total 100.0 keeps unviable mutants in the denominator. This is a sampled operator flip, not a mutmut or cosmic-ray campaign. Project files were not edited.
 
 ## Authenticity scorecard
 
@@ -65,24 +65,27 @@ Authenticity scorecard is not the Merge Readiness Score and does not move the ga
 
 | Dimension | Value | Threshold | Status |
 | --- | --- | --- | --- |
-| Dependency authenticity (DAR) | 72.7 | 100% | FAIL |
+| Dependency authenticity (DAR) | 100.0 | 100% | PASS |
 | Statement coverage | 100.0 | ≥ 80% | PASS |
 | Branch coverage | 100.0 | ≥ 75% | PASS |
-| Mutation score (MSI) | n/a | ≥ 70% | n/a |
+| Mutation score (MSI) | 100.0 | ≥ 70% | PASS |
 | Assertion strength (ASR) | 100.0 | ≥ 85% | PASS |
 | Mean CRAP | 5.6 | ≤ 15 | PASS |
 | CRAP > 30 | 0 | 0 | PASS |
 | Flakiness risk (FIRI) | 0.0 | 0% | PASS |
 
-ASR is substantive assertions divided by all assertions. Tautologies (x == x, assert True) and type-or-presence checks are not substantive. A comparison against a literal is substantive and can still be a magic-number smell. Vacuous or tautological assertions: 0. Assertion roulette: 3. Magic-number asserts: 15. AAA interleaving: 0. DAR = verified imports / imports. Verified means stdlib, a module in this workspace, or a name declared in a manifest. No registry was contacted. Phantom imports: `pytest`, `pytest`, `pytest`. FIRI = tests with direct time, random, filesystem, or network calls, divided by test functions. This does not re-run the suite.
+ASR is substantive assertions divided by all assertions. Tautologies (x == x, assert True) and type-or-presence checks are not substantive. A comparison against a literal is substantive and can still be a magic-number smell. Vacuous or tautological assertions: 0. Assertion roulette: 3. Magic-number asserts: 15. AAA interleaving: 0. DAR = verified imports / imports. Verified means stdlib, a module in this workspace, or a name declared in a manifest. No registry was contacted. Phantom imports: none. FIRI = tests with direct time, random, filesystem, or network calls, divided by test functions. This does not re-run the suite.
 
 ## Property-based testing
 
-Deep probes were not requested.
+Ran 349 property trials across structural conformance, determinism, and entity substitution. Failing inputs were shrunk toward simpler values.
 
 | Symbol | Trials | Passed | Failed |
 | --- | --- | --- | --- |
-| — | 0 | 0 | 0 |
+| `subtotal` | 191 | 191 | 0 |
+| `apply_coupon` | 40 | 40 | 0 |
+| `charge` | 34 | 34 | 0 |
+| `refund` | 84 | 84 | 0 |
 
 ## Prompt coverage
 
@@ -96,7 +99,7 @@ Union coverage: 100.0%.
 
 ## Execution time
 
-Timing was not measured.
+Mann-Whitney U compared baseline inputs with heavier inputs on this same revision. A regression is recorded only when p < 0.05 and the median is more than 8x slower after allowing for a larger list input. This is not a cross-commit EffiBench run.
 
 ## Code graph
 

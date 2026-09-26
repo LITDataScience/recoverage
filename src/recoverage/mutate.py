@@ -87,7 +87,8 @@ def run_mutants(profile: ProjectProfile, functions: list[MappedFunction], *, lim
             f" ({timeouts} timeouts counted as killed, {unviable} unviable excluded). "
             f"MSI {msi if msi is not None else 'n/a'}. "
             f"MSI_total {msi_total if msi_total is not None else 'n/a'} keeps unviable mutants in the denominator. "
-            "This is a sampled operator flip, not a mutmut or cosmic-ray campaign. Project files were not edited."
+            "This is a sampled operator flip, not a mutmut or cosmic-ray campaign. "
+            "Project files were not edited."
         ),
     }
 

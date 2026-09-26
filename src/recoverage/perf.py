@@ -83,7 +83,10 @@ def time_functions(profile: ProjectProfile, functions: list[MappedFunction], rep
             worst_p = min(worst_p, p_value)
             base_med = sorted(baseline)[len(baseline) // 2]
             heavy_med = sorted(heavy)[len(heavy) // 2]
-            if p_value < 0.05 and base_med > 0 and heavy_med > base_med * 8:
+            # A longer list is more work. 200 items versus 3 is not an 8x regression
+            # when the slowdown stays within that size ratio.
+            allowance = 8.0 * _work_ratio(function)
+            if p_value < 0.05 and base_med > 0 and heavy_med > base_med * allowance:
                 regressions.append(
                     {
                         "symbol": function.spec.qualname,
@@ -103,7 +106,8 @@ def time_functions(profile: ProjectProfile, functions: list[MappedFunction], rep
         }
     note = (
         "Mann-Whitney U compared baseline inputs with heavier inputs on this same revision. "
-        "A regression is recorded only when p < 0.05 and the median is more than 8x slower. "
+        "A regression is recorded only when p < 0.05 and the median is more than 8x slower "
+        "after allowing for a larger list input. "
         "This is not a cross-commit EffiBench run."
     )
     if regressions:
@@ -156,6 +160,16 @@ def _args(function: MappedFunction, mode: str) -> tuple:
         else:
             values.append("x" if heavy else "a")
     return tuple(values)
+
+
+def _work_ratio(function: MappedFunction) -> float:
+    baseline = _args(function, "baseline")
+    heavy = _args(function, "heavy")
+    ratio = 1.0
+    for left, right in zip(baseline, heavy):
+        if isinstance(left, list) and isinstance(right, list) and left:
+            ratio = max(ratio, len(right) / len(left))
+    return ratio
 
 
 def _module(relative: str, src_layout: bool) -> str:

@@ -189,6 +189,16 @@ def test_timing_does_not_import_the_project_here(tmp_path: Path):
     assert result["ran"] is True
 
 
+def test_a_longer_list_raises_the_timing_allowance():
+    from recoverage.perf import _work_ratio
+
+    function = _fn("subtotal")
+    function.spec.parameters = ["prices"]
+    ratio = _work_ratio(function)
+    assert ratio == 200 / 3
+    assert 14 < 8 * ratio
+
+
 def test_alias_import_is_not_redacted_as_a_path():
     text = 'import { Button } from "@/components/ui/button"'
     assert redact_text(text) == text

@@ -231,6 +231,8 @@ def _module_exports(tree: ast.AST) -> frozenset[str]:
 def _authenticity(profile: ProjectProfile, resolver: _Resolver) -> dict:
     root = Path(profile.root)
     declared = _declared(root)
+    if profile.test_runner:
+        declared.add(_norm(profile.test_runner))
     local = _local_tops(profile)
     verified = 0
     total = 0

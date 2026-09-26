@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'sha256-T+31CylnYz+6n1R5Bm9W738EnWo39QrzxqCqg1H/CxA='; script-src 'sha256-Wu+aUZS+7wInOl9nQ9X/jAR6IrbavHexbvjOeO5a5b8='">
-<title>Recoverage 60.0 needs-review</title>
+<title>Recoverage 95.0 production-ready</title>
 <style>
 :root { color-scheme: light; --bg:#f4f1ea; --ink:#1c1917; --muted:#57534e; --card:#fffcf7; --line:#e7e1d8; --nav:#1f4e79; --chip:#efeae2; }
 html[data-theme="dark"] { color-scheme: dark; --bg:#161412; --ink:#f5f0e8; --muted:#a8a29e; --card:#221f1c; --line:#3a342e; --nav:#8eb4d4; --chip:#2c2824; }
@@ -58,12 +58,12 @@ svg.chart { width: 100%; height: auto; background: var(--card); border-radius: 8
 </head>
 <body>
 <header>
-  <div><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 130" role="img" aria-label="Score 60.0 of 100, gate needs-review"><title>Score 60.0 of 100, gate needs-review</title><path d="M 28 108 A 72 72 0 0 1 172 108" fill="none" stroke="#E7E1D8" stroke-width="14" stroke-linecap="round"/><path d="M 28.00 108.00 A 72 72 0 1 1 122.25 39.52" fill="none" stroke="#c47b00" stroke-width="14" stroke-linecap="round"/><text x="100" y="96" text-anchor="middle" font-size="28" font-weight="700" fill="#1C1917" font-family="Segoe UI, sans-serif">60.0</text><text x="100" y="116" text-anchor="middle" font-size="11" fill="#57534e" font-family="Segoe UI, sans-serif">NEEDS REVIEW</text></svg></div>
+  <div><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 130" role="img" aria-label="Score 95.0 of 100, gate production-ready"><title>Score 95.0 of 100, gate production-ready</title><path d="M 28 108 A 72 72 0 0 1 172 108" fill="none" stroke="#E7E1D8" stroke-width="14" stroke-linecap="round"/><path d="M 28.00 108.00 A 72 72 0 1 1 171.11 96.74" fill="none" stroke="#1e7a46" stroke-width="14" stroke-linecap="round"/><text x="100" y="96" text-anchor="middle" font-size="28" font-weight="700" fill="#1C1917" font-family="Segoe UI, sans-serif">95.0</text><text x="100" y="116" text-anchor="middle" font-size="11" fill="#57534e" font-family="Segoe UI, sans-serif">PRODUCTION READY</text></svg></div>
   <div>
     <h1>Recoverage · fixture</h1>
-    <p><span class="badge badge-needs-review">NEEDS REVIEW</span></p>
-    <p class="meta">Needs review. The Merge Readiness Score is 60.0, below the merge bar of 70.</p>
-    <p class="meta">python · runner pytest · coverage.py · 2026-09-26T09:45:53+00:00 · LLM off</p>
+    <p><span class="badge badge-production-ready">PRODUCTION READY</span></p>
+    <p class="meta">Production ready under this rubric: Merge Readiness Score at least 85, measured coverage, and no critical gap. This is not a security audit.</p>
+    <p class="meta">python · runner pytest · coverage.py · 2026-09-26T09:53:19+00:00 · LLM off</p>
   </div>
   <button id="theme" type="button">Theme</button>
 </header>
@@ -86,13 +86,13 @@ svg.chart { width: 100%; height: auto; background: var(--card); border-radius: 8
     <div class="kpi"><b>100.0%</b><span>Statement coverage</span></div>
     <div class="kpi"><b>100.0%</b><span>Branch coverage</span></div>
     <div class="kpi"><b>0</b><span>Gaps · 0 critical</span></div>
-    <div class="kpi"><b>no</b><span>Mutation ran</span></div>
+    <div class="kpi"><b>yes</b><span>Mutation ran</span></div>
   </div>
-  <p>Host budget: 16 cores, 31.9 GB RAM. Walk cap is 40000 files, cache is 128 MB, parse workers are 8.</p>
+  <p>Host budget: 4 cores, 8.0 GB RAM. Baseline caps: walk 20000 files / 200 MB, cache 64 MB, run 600s, parse workers 1.</p>
   <h2>Score factors</h2>
   <table>
     <tr><th>Factor</th><th>Earned</th><th></th><th>Detail</th></tr>
-    <tr><td>Structural coverage</td><td>40.00 / 40</td><td><div class="bar"><i class="w100"></i></div></td><td>Statement coverage 100.0% and branch coverage 100.0% combine to 100.0 before the 40-point weight.</td></tr><tr><td>Property-based resilience</td><td>0.00 / 25</td><td><div class="bar"><i class="w0"></i></div></td><td>Deep probes were not requested.</td></tr><tr><td>Prompt / semantic alignment</td><td>10.00 / 15</td><td><div class="bar"><i class="w65"></i></div></td><td>ΔH coverage 66.7%. ΔH is the drop in Shannon entropy of specification tokens after removing tokens named by tests. This is a lexical spotlight, not transformer attention.</td></tr><tr><td>Blast radius safety</td><td>10.00 / 10</td><td><div class="bar"><i class="w100"></i></div></td><td>No diff was supplied. The radius is the whole indexed graph, so union coverage collapses to coverage of those functions.</td></tr><tr><td>Execution-time efficiency</td><td>0.00 / 10</td><td><div class="bar"><i class="w0"></i></div></td><td>Timing was not measured.</td></tr>
+    <tr><td>Structural coverage</td><td>40.00 / 40</td><td><div class="bar"><i class="w100"></i></div></td><td>Statement coverage 100.0% and branch coverage 100.0% combine to 100.0 before the 40-point weight.</td></tr><tr><td>Property-based resilience</td><td>25.00 / 25</td><td><div class="bar"><i class="w100"></i></div></td><td>Ran 349 property trials across structural conformance, determinism, and entity substitution. Failing inputs were shrunk toward simpler values.</td></tr><tr><td>Prompt / semantic alignment</td><td>10.00 / 15</td><td><div class="bar"><i class="w65"></i></div></td><td>ΔH coverage 66.7%. ΔH is the drop in Shannon entropy of specification tokens after removing tokens named by tests. This is a lexical spotlight, not transformer attention.</td></tr><tr><td>Blast radius safety</td><td>10.00 / 10</td><td><div class="bar"><i class="w100"></i></div></td><td>No diff was supplied. The radius is the whole indexed graph, so union coverage collapses to coverage of those functions.</td></tr><tr><td>Execution-time efficiency</td><td>10.00 / 10</td><td><div class="bar"><i class="w100"></i></div></td><td>Mann-Whitney U compared baseline inputs with heavier inputs on this same revision. A regression is recorded only when p &lt; 0.05 and the median is more than 8x slower after allowing for a larger list input. This is not a cross-commit EffiBench run.</td></tr>
   </table>
 </section>
 <section id="coverage">
@@ -129,18 +129,18 @@ svg.chart { width: 100%; height: auto; background: var(--card); border-radius: 8
 <section id="authenticity">
   <h2>Authenticity</h2>
   <p>Authenticity scorecard is not the Merge Readiness Score and does not move the gate. DAR checks the workspace, the stdlib, and declared manifests. It does not query a package registry. FIRI is a static scan, not a reproduction of a flake.</p>
-  <table><tr><th>Dimension</th><th>Value</th><th>Threshold</th><th>Status</th></tr><tr><td>Dependency authenticity (DAR)</td><td>72.7</td><td>100%</td><td>FAIL</td></tr><tr><td>Statement coverage</td><td>100.0</td><td>≥ 80%</td><td>PASS</td></tr><tr><td>Branch coverage</td><td>100.0</td><td>≥ 75%</td><td>PASS</td></tr><tr><td>Mutation score (MSI)</td><td>n/a</td><td>≥ 70%</td><td>n/a</td></tr><tr><td>Assertion strength (ASR)</td><td>100.0</td><td>≥ 85%</td><td>PASS</td></tr><tr><td>Mean CRAP</td><td>5.6</td><td>≤ 15</td><td>PASS</td></tr><tr><td>CRAP &gt; 30</td><td>0</td><td>0</td><td>PASS</td></tr><tr><td>Flakiness risk (FIRI)</td><td>0.0</td><td>0%</td><td>PASS</td></tr></table>
-  <p>ASR is substantive assertions divided by all assertions. Tautologies (x == x, assert True) and type-or-presence checks are not substantive. A comparison against a literal is substantive and can still be a magic-number smell. Vacuous or tautological assertions: 0. Assertion roulette: 3. Magic-number asserts: 15. AAA interleaving: 0. DAR = verified imports / imports. Verified means stdlib, a module in this workspace, or a name declared in a manifest. No registry was contacted. Phantom imports: `pytest`, `pytest`, `pytest`. FIRI = tests with direct time, random, filesystem, or network calls, divided by test functions. This does not re-run the suite.</p>
+  <table><tr><th>Dimension</th><th>Value</th><th>Threshold</th><th>Status</th></tr><tr><td>Dependency authenticity (DAR)</td><td>100.0</td><td>100%</td><td>PASS</td></tr><tr><td>Statement coverage</td><td>100.0</td><td>≥ 80%</td><td>PASS</td></tr><tr><td>Branch coverage</td><td>100.0</td><td>≥ 75%</td><td>PASS</td></tr><tr><td>Mutation score (MSI)</td><td>100.0</td><td>≥ 70%</td><td>PASS</td></tr><tr><td>Assertion strength (ASR)</td><td>100.0</td><td>≥ 85%</td><td>PASS</td></tr><tr><td>Mean CRAP</td><td>5.6</td><td>≤ 15</td><td>PASS</td></tr><tr><td>CRAP &gt; 30</td><td>0</td><td>0</td><td>PASS</td></tr><tr><td>Flakiness risk (FIRI)</td><td>0.0</td><td>0%</td><td>PASS</td></tr></table>
+  <p>ASR is substantive assertions divided by all assertions. Tautologies (x == x, assert True) and type-or-presence checks are not substantive. A comparison against a literal is substantive and can still be a magic-number smell. Vacuous or tautological assertions: 0. Assertion roulette: 3. Magic-number asserts: 15. AAA interleaving: 0. DAR = verified imports / imports. Verified means stdlib, a module in this workspace, or a name declared in a manifest. No registry was contacted. Phantom imports: none. FIRI = tests with direct time, random, filesystem, or network calls, divided by test functions. This does not re-run the suite.</p>
   <table><tr><th>Function</th><th>Complexity</th><th>Coverage</th><th>CRAP</th></tr><tr><td><code>apply_coupon</code></td><td>7</td><td>100%</td><td>7.0</td></tr><tr><td><code>charge</code></td><td>7</td><td>100%</td><td>7.0</td></tr><tr><td><code>tier_price</code></td><td>7</td><td>100%</td><td>7.0</td></tr><tr><td><code>subtotal</code></td><td>4</td><td>100%</td><td>4.0</td></tr><tr><td><code>refund</code></td><td>3</td><td>100%</td><td>3.0</td></tr></table>
 </section>
 <section id="analytics">
   <h2>Analytics</h2>
-  <p>Deep probes were not requested.</p>
-  
-  <p>Mutation testing did not run.</p>
+  <p>Ran 349 property trials across structural conformance, determinism, and entity substitution. Failing inputs were shrunk toward simpler values.</p>
+  <table><tr><th>Symbol</th><th>Trials</th><th>Passed</th><th>Failed</th></tr><tr><td><code>subtotal</code></td><td>191</td><td>191</td><td>0</td></tr><tr><td><code>apply_coupon</code></td><td>40</td><td>40</td><td>0</td></tr><tr><td><code>charge</code></td><td>34</td><td>34</td><td>0</td></tr><tr><td><code>refund</code></td><td>84</td><td>84</td><td>0</td></tr></table>
+  <p>Killed 5/5 viable mutants on a temp copy (0 timeouts counted as killed, 0 unviable excluded). MSI 100.0. MSI_total 100.0 keeps unviable mutants in the denominator. This is a sampled operator flip, not a mutmut or cosmic-ray campaign. Project files were not edited.</p>
   <p>ΔH is the drop in Shannon entropy of specification tokens after removing tokens named by tests. This is a lexical spotlight, not transformer attention.</p>
   <p>No diff was supplied. The radius is the whole indexed graph, so union coverage collapses to coverage of those functions. Union coverage: 100.0%.</p>
-  <p>Timing was not measured.</p>
+  <p>Mann-Whitney U compared baseline inputs with heavier inputs on this same revision. A regression is recorded only when p &lt; 0.05 and the median is more than 8x slower after allowing for a larger list input. This is not a cross-commit EffiBench run.</p>
   <p>Tree-sitter index: yes. Entities: 5. Communities: 5.</p>
 </section>
 <section id="suggestions">
@@ -186,7 +186,7 @@ CRAP, assertion strength, dependency authenticity, static flakiness risk, and th
 </section>
 </main>
 </div>
-<script type="application/json" id="recoverage-data">{"score":60.0,"gate":"needs-review","findings":[],"files":["src/shop/cart.py","src/shop/payments.py","src/shop/pricing.py"]}</script>
+<script type="application/json" id="recoverage-data">{"score":95.0,"gate":"production-ready","findings":[],"files":["src/shop/cart.py","src/shop/payments.py","src/shop/pricing.py"]}</script>
 <script>
 (function () {
   var root = document.documentElement;

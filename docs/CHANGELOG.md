@@ -8,7 +8,7 @@ All notable changes are documented here. The format is [Keep a Changelog](https:
 
 - `report.html` is a single-file dashboard: inline SVG charts, filters, a theme toggle, and a file table. It does not load a network resource. A missing matplotlib install still draws the charts.
 - Walk size, cache, and the run budget follow the machine: halved under 4 GB of RAM, deep probes skipped under 2 GB, temp copies skipped when the temp volume has under 1 GB free. A GPU is not used and not required.
-- The shop fixture tests cover payments, pricing, and the cart branches. The checked-in sample is MRS 60, `needs-review`, statement coverage 100%. Typst is also found in the WinGet links directory when it is not on `PATH`.
+- The shop fixture tests cover payments, pricing, and the cart branches. A `--dynamic --deep` sample scores MRS 95, gate `production-ready`, statement coverage 100%. Property rows count only decided trials. A longer list is not timed as an 8x regression. The detected test runner is not a phantom import. Typst is also found in the WinGet links directory when it is not on `PATH`.
 - Maintainer review notes are not published with the docs.
 - Documentation is an MkDocs Material site, built in CI and published to GitHub Pages, with a PDF. `recoverage docs` opens it.
 - The Release workflow starts the PyPI upload on the version tag. The `pypi` environment rejects a run whose ref is `main`.

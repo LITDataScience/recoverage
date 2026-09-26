@@ -27,14 +27,14 @@ Recoverage does not use a GPU. NVIDIA, AMD, and Apple GPUs are compatible becaus
 
 ## Try the fixture
 
-`examples/fixture` is a small `shop` package. Its tests cover cart branches, payments, and tier pricing. `examples/sample-report/` is a checked-in `--dynamic` run of that fixture (MRS 60, gate `needs-review`, statement coverage 100%). A `0.1.0` `analysis.json` does not reload on `0.2.0`.
+`examples/fixture` is a small `shop` package. Its tests cover cart branches, payments, and tier pricing. `examples/sample-report/` is a checked-in `--dynamic --deep` run of that fixture (MRS 95, gate `production-ready`, statement coverage 100%). A `0.1.0` `analysis.json` does not reload on `0.2.0`.
 
 ```bash
-python3 -m recoverage run examples/fixture --output examples/sample-report --dynamic --no-llm
+python3 -m recoverage run examples/fixture --output examples/sample-report --dynamic --deep --no-llm
 python3 -m recoverage show examples/sample-report --no-open
 ```
 
-The checked-in sample is that dynamic run: statement coverage 100%, gate `needs-review`, MRS 60. Deep probes were not requested, so the score stays under the merge bar. Omit `--dynamic` for a static run whose coverage is `not measured`.
+The checked-in sample is that deep run: statement coverage 100%, gate `production-ready`, MRS 95. Omit `--dynamic` and coverage is `not measured`. Omit `--deep` and the score falls to 60, gate `needs-review`, because property, mutation, and timing do not run.
 
 `show` serves the `report.html` that `run` already wrote. It does not analyze again. Open `examples/sample-report/report.html` directly if you do not want a local server. `--no-open` skips the browser.
 
