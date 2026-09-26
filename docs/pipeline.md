@@ -71,9 +71,9 @@ Python coverage tool is always reported as `coverage.py`. JS coverage tool is `c
 
 ## Coverage
 
-Python: `coverage run --branch --source=<packages>`, then pytest (or `unittest discover`). Timeout 180s. Unimported Python modules are counted as uncovered in the project percentage, and the raw tool percentage is printed beside it. With `--branch`, coverage.py's `percent_covered` blends arcs into statements, so the score uses statement coverage (`covered_lines / num_statements`), not that headline.
+Python: `coverage run --branch --source=<packages>`, then pytest (or `unittest discover`). Timeout 180s. Pytest `addopts` are cleared and `-p no:cov` is set, because a project `--cov` flag under `coverage run` makes pytest exit 4 when pytest-cov is not installed. Unimported Python modules are counted as uncovered in the project percentage, and the raw tool percentage is printed beside it. With `--branch`, coverage.py's `percent_covered` blends arcs into statements, so the score uses statement coverage (`covered_lines / num_statements`), not that headline.
 
-A nonzero pytest exit still returns `measured=True` when `coverage.json` was written. The gate then blocks. See [scoring.md](scoring.md). Test stdout and stderr tails are not stored.
+A nonzero pytest exit still returns `measured=True` when `coverage.json` was written, except exit 4. Exit 4 means pytest never ran the suite: either it rejected the command, or it could not import `conftest.py` because this interpreter does not have the project's dependencies. Coverage stays unmeasured and the note names the missing module. The gate then blocks. See [scoring.md](scoring.md). Test stdout and stderr tails are not stored. Run `recoverage` with the project's own Python when that environment is not the one Recoverage is installed in.
 
 JS: `package.json` `scripts.test` when it is a plain argv (`vitest`, `jest`, `npm`, `pnpm`, `yarn`, `npx`, `node`, `turbo`). Shell pipelines are ignored and the fallback is `npx --no-install vitest run` or `jest --runInBand`, wrapped in `c8` or `nyc`. Timeout 180s.
 

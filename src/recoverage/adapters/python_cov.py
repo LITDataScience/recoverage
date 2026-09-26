@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -75,6 +76,17 @@ def _run_python(
         result.command = command
         return result
 
+    if completed.returncode == 4:
+        result = unmeasured(
+            profile,
+            structures,
+            notes=[_pytest_exit_note(completed.stderr or "")],
+            tool="coverage.py",
+        )
+        result.command = command
+        result.tests_exit_code = 4
+        return result
+
     json_cmd = [sys.executable, "-m", "coverage", "json", "-o", str(json_path), "--pretty-print"]
     json_run = subprocess.run(json_cmd, cwd=root, env=env, capture_output=True, text=True, check=False)
     notes = []
@@ -104,11 +116,31 @@ def _run_python(
     )
 
 
+def _pytest_exit_note(stderr: str) -> str:
+    """One sentence. The traceback itself is not stored."""
+    if "unrecognized arguments" in stderr and "--cov" in stderr:
+        return (
+            "pytest exited 4 because a --cov flag in addopts is not available in this interpreter. "
+            "Recoverage clears addopts and disables the cov plugin."
+        )
+    if "while loading conftest" in stderr or "No module named" in stderr:
+        missing = re.search(r"No module named ['\"]([^'\"]+)['\"]", stderr)
+        name = missing.group(1) if missing else "a project dependency"
+        return (
+            f"pytest exited 4 while importing the test configuration ({name} is not installed). "
+            "The Python that is running Recoverage does not have this project's dependencies, so coverage was not measured. "
+            "Run recoverage with that project's interpreter."
+        )
+    return "pytest exited 4 before tests ran, so coverage was not measured."
+
+
 def _runner_args(profile: ProjectProfile, output_dir: Path) -> list[str]:
     if profile.test_runner == "unittest":
         return ["unittest", "discover", "-q"]
-    cache = output_dir / ".pytest_cache"
-    return ["pytest", "-q", "--tb=line", "-o", f"cache_dir={cache}"]
+    cache = (output_dir / ".pytest_cache").as_posix()
+    # Project addopts often include --cov. Under `coverage run` those flags are either
+    # unrecognized (pytest exits 4) or a second coverage plugin. Clear them.
+    return ["pytest", "-q", "--tb=line", "-p", "no:cov", "-o", "addopts=", "-o", f"cache_dir={cache}"]
 
 
 def _fallback_source(profile: ProjectProfile) -> str:
